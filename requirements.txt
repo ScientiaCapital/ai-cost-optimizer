@@ -29,3 +29,6 @@ httpx>=0.24.1  # for async test client
 # Performance testing
 locust>=2.15.0
 pytest-benchmark>=4.0.0
+
+# Database migrations
+alembic>=1.12.0
