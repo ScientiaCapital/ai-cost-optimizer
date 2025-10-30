@@ -1,5 +1,5 @@
 ---
-name: "AI Cost Optimizer"
+name: "ai-cost-optimizer"
 description: "Save 40-70% on AI costs with intelligent multi-LLM routing. Automatically selects the optimal model based on task complexity across 40+ models from 8 providers."
 license: "MIT"
 ---
