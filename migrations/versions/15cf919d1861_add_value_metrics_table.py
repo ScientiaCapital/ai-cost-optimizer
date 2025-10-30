@@ -30,8 +30,8 @@ def upgrade() -> None:
         sa.Column('selected_provider', sa.String()),
         sa.Column('selected_model', sa.String()),
         sa.Column('selected_cost', sa.Float()),
-        sa.Column('baseline_provider', sa.String(), server_default='openai'),
-        sa.Column('baseline_model', sa.String(), server_default='gpt-4'),
+        sa.Column('baseline_provider', sa.String(), server_default='anthropic'),
+        sa.Column('baseline_model', sa.String(), server_default='claude-3-opus-20240229'),
         sa.Column('baseline_cost', sa.Float()),
         sa.Column('savings', sa.Float())  # baseline_cost - selected_cost
     )

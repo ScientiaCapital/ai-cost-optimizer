@@ -64,9 +64,9 @@ def upgrade() -> None:
         sa.Column('rating', sa.Integer(), nullable=False),
         sa.Column('comment', sa.Text(), nullable=True),
         sa.Column('user_agent', sa.Text(), nullable=True),
-        sa.Column('timestamp', sa.Text(), nullable=False)
+        sa.Column('timestamp', sa.Text(), nullable=False),
+        sa.ForeignKeyConstraint(['cache_key'], ['response_cache.cache_key'])
     )
-    # Note: Foreign key constraint for cache_key not added as SQLite has limited FK support in migrations
 
     # Create indexes for faster lookups
     op.create_index('idx_cache_prompt', 'response_cache', ['prompt_normalized'])
