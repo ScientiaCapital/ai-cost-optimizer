@@ -14,3 +14,7 @@ python-dotenv==1.0.0
 # Cerebras Inference + CePO
 cerebras_cloud_sdk>=0.0.1
 optillm>=0.1.0
+
+# Tokenizer R&D
+tokenizers>=0.19.1
+tqdm>=4.66.4

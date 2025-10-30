@@ -1,0 +1,1 @@
+SuperBPE aims to reduce tokens by learning superword tokens like "by the way". This is a small sample to demonstrate corpus preparation and tokenizer training. We include a few repeated phrases: by the way, by the way, of course, of course. Tokenization efficiency matters for inference cost and throughput.
