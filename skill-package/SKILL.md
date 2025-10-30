@@ -1,24 +1,7 @@
 ---
-name: AI Cost Optimizer
-description: Save 40-70% on AI costs with intelligent multi-LLM routing. Automatically selects the optimal model based on task complexity across 40+ models from 8 providers.
-license: MIT
-metadata:
-  id: ai-cost-optimizer
-  version: 1.0.0
-  author: ScientiaCapital
-  author_url: https://github.com/ScientiaCapital/ai-cost-optimizer
-  icon: icon.png
-  category: productivity
-  tags:
-    - ai
-    - cost-optimization
-    - llm
-    - routing
-    - budget
-    - efficiency
-  homepage: https://github.com/ScientiaCapital/ai-cost-optimizer
-  support_url: https://github.com/ScientiaCapital/ai-cost-optimizer/issues
-  documentation_url: https://github.com/ScientiaCapital/ai-cost-optimizer#readme
+name: "AI Cost Optimizer"
+description: "Save 40-70% on AI costs with intelligent multi-LLM routing. Automatically selects the optimal model based on task complexity across 40+ models from 8 providers."
+license: "MIT"
 ---
 
 # AI Cost Optimizer
