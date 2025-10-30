@@ -67,6 +67,7 @@ class CompleteResponse(BaseModel):
     cache_hit: bool = False
     original_cost: Optional[float] = None
     savings: float = 0.0
+    cache_key: Optional[str] = None
 
 
 class StatsResponse(BaseModel):
@@ -75,6 +76,22 @@ class StatsResponse(BaseModel):
     by_provider: list
     by_complexity: list
     recent_requests: list
+
+
+class FeedbackRequest(BaseModel):
+    """Request model for feedback endpoint."""
+    cache_key: str = Field(..., min_length=1, description="Cache key of response to rate")
+    rating: int = Field(..., ge=-1, le=1, description="1 for upvote, -1 for downvote")
+    comment: Optional[str] = Field(None, max_length=500, description="Optional feedback comment")
+
+
+class FeedbackResponse(BaseModel):
+    """Response model for feedback endpoint."""
+    success: bool
+    cache_key: str
+    quality_score: Optional[float]
+    invalidated: bool
+    message: str
 
 
 # API Endpoints
@@ -146,7 +163,8 @@ async def complete_prompt(request: CompleteRequest):
                 total_cost_today=total_cost,
                 cache_hit=True,
                 original_cost=cached["cost"],
-                savings=cached["cost"]
+                savings=cached["cost"],
+                cache_key=cached["cache_key"]
             )
 
         # ========== CACHE MISS - NORMAL FLOW ==========
@@ -200,6 +218,9 @@ async def complete_prompt(request: CompleteRequest):
             f"cost=${result['cost']:.6f}, total=${total_cost:.2f}, cached=True"
         )
 
+        # Generate cache key for feedback
+        cache_key = cost_tracker._generate_cache_key(request.prompt, request.max_tokens)
+
         return CompleteResponse(
             response=result["response"],
             provider=result["provider"],
@@ -212,7 +233,8 @@ async def complete_prompt(request: CompleteRequest):
             total_cost_today=total_cost,
             cache_hit=False,
             original_cost=None,
-            savings=0.0
+            savings=0.0,
+            cache_key=cache_key
         )
 
     except RoutingError as e:
@@ -319,6 +341,98 @@ async def get_cache_stats():
 
     except Exception as e:
         logger.error(f"Error fetching cache stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+async def submit_feedback(request: FeedbackRequest, user_agent: Optional[str] = None):
+    """
+    Submit user feedback (thumbs up/down) for a cached response.
+
+    This endpoint allows users to rate cached responses for quality.
+    After 3+ votes, poor quality responses (score < 0.3) are automatically
+    invalidated and will be regenerated on next request.
+
+    Args:
+        request: FeedbackRequest with cache_key, rating, and optional comment
+        user_agent: Optional User-Agent header
+
+    Returns:
+        FeedbackResponse with updated quality score and invalidation status
+    """
+    try:
+        # Add feedback to database
+        cost_tracker.add_feedback(
+            cache_key=request.cache_key,
+            rating=request.rating,
+            comment=request.comment,
+            user_agent=user_agent
+        )
+
+        # Update quality score (may trigger invalidation)
+        quality_score = cost_tracker.update_quality_score(request.cache_key)
+
+        # Check if entry was invalidated
+        conn = cost_tracker._CostTracker__get_connection() if hasattr(cost_tracker, '_CostTracker__get_connection') else None
+        if not conn:
+            import sqlite3
+            conn = sqlite3.connect(cost_tracker.db_path)
+
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT invalidated FROM response_cache
+            WHERE cache_key = ?
+        """, (request.cache_key,))
+        row = cursor.fetchone()
+        invalidated = bool(row["invalidated"]) if row else False
+        conn.close()
+
+        logger.info(
+            f"Feedback received: cache_key={request.cache_key[:16]}..., "
+            f"rating={request.rating}, quality_score={quality_score}, invalidated={invalidated}"
+        )
+
+        message = "Thank you for your feedback!"
+        if invalidated:
+            message = "Response invalidated due to low quality. Future requests will generate a fresh response."
+        elif quality_score is not None and quality_score < 0.5:
+            message = "Thank you for your feedback! This response is being monitored for quality."
+
+        return FeedbackResponse(
+            success=True,
+            cache_key=request.cache_key,
+            quality_score=quality_score,
+            invalidated=invalidated,
+            message=message
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    except Exception as e:
+        logger.error(f"Error processing feedback: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/quality/stats")
+async def get_quality_stats():
+    """
+    Get quality statistics across all cached responses.
+
+    Returns quality metrics including:
+    - overall: Aggregate quality stats
+    - by_provider: Quality breakdown by provider
+    - top_rated: Highest quality responses
+    - worst_rated: Lowest quality responses (excluding invalidated)
+    - invalidated_responses: Responses that were removed due to poor quality
+    """
+    try:
+        stats = cost_tracker.get_quality_stats()
+        return stats
+
+    except Exception as e:
+        logger.error(f"Error fetching quality stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -48,7 +48,25 @@ class CostTracker:
                 cost REAL NOT NULL,
                 created_at TEXT NOT NULL,
                 last_accessed TEXT NOT NULL,
-                hit_count INTEGER DEFAULT 0
+                hit_count INTEGER DEFAULT 0,
+                upvotes INTEGER DEFAULT 0,
+                downvotes INTEGER DEFAULT 0,
+                quality_score REAL DEFAULT NULL,
+                invalidated INTEGER DEFAULT 0,
+                invalidation_reason TEXT DEFAULT NULL
+            )
+        """)
+
+        # Response feedback table - stores user ratings for cached responses
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS response_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cache_key TEXT NOT NULL,
+                rating INTEGER NOT NULL,
+                comment TEXT,
+                user_agent TEXT,
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY (cache_key) REFERENCES response_cache(cache_key)
             )
         """)
 
@@ -61,6 +79,11 @@ class CostTracker:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_cache_created
             ON response_cache(created_at)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_feedback_cache_key
+            ON response_feedback(cache_key)
         """)
 
         conn.commit()
@@ -280,7 +303,7 @@ class CostTracker:
 
     def check_cache(self, prompt: str, max_tokens: int) -> Optional[Dict]:
         """
-        Check if response exists in cache.
+        Check if response exists in cache and is not invalidated.
 
         Args:
             prompt: User prompt
@@ -297,7 +320,7 @@ class CostTracker:
 
         cursor.execute("""
             SELECT * FROM response_cache
-            WHERE cache_key = ?
+            WHERE cache_key = ? AND invalidated = 0
         """, (cache_key,))
 
         row = cursor.fetchone()
@@ -458,3 +481,270 @@ class CostTracker:
         cursor.execute("DELETE FROM response_cache")
         conn.commit()
         conn.close()
+
+    # ==================== QUALITY TRACKING OPERATIONS ====================
+
+    def add_feedback(
+        self,
+        cache_key: str,
+        rating: int,
+        comment: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> bool:
+        """
+        Add user feedback for a cached response.
+
+        Args:
+            cache_key: Cache key of response being rated
+            rating: 1 for upvote, -1 for downvote
+            comment: Optional user comment
+            user_agent: Optional user agent string
+
+        Returns:
+            True if feedback was recorded successfully
+        """
+        if rating not in [1, -1]:
+            raise ValueError("Rating must be 1 (upvote) or -1 (downvote)")
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        try:
+            # Store feedback
+            cursor.execute("""
+                INSERT INTO response_feedback (
+                    cache_key, rating, comment, user_agent, timestamp
+                )
+                VALUES (?, ?, ?, ?, ?)
+            """, (cache_key, rating, comment, user_agent, datetime.now().isoformat()))
+
+            # Update vote counts on cache entry
+            if rating == 1:
+                cursor.execute("""
+                    UPDATE response_cache
+                    SET upvotes = upvotes + 1
+                    WHERE cache_key = ?
+                """, (cache_key,))
+            else:
+                cursor.execute("""
+                    UPDATE response_cache
+                    SET downvotes = downvotes + 1
+                    WHERE cache_key = ?
+                """, (cache_key,))
+
+            conn.commit()
+            return True
+
+        except Exception as e:
+            conn.rollback()
+            raise e
+
+        finally:
+            conn.close()
+
+    def update_quality_score(self, cache_key: str) -> Optional[float]:
+        """
+        Recalculate and update quality score for a cached response.
+
+        Args:
+            cache_key: Cache key to update
+
+        Returns:
+            New quality score, or None if no votes
+        """
+        from .quality import QualityValidator
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Get current vote counts
+        cursor.execute("""
+            SELECT upvotes, downvotes FROM response_cache
+            WHERE cache_key = ?
+        """, (cache_key,))
+
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return None
+
+        upvotes = row["upvotes"]
+        downvotes = row["downvotes"]
+
+        # Calculate quality score
+        quality_score = QualityValidator.calculate_quality_score(upvotes, downvotes)
+
+        # Update database
+        cursor.execute("""
+            UPDATE response_cache
+            SET quality_score = ?
+            WHERE cache_key = ?
+        """, (quality_score, cache_key))
+
+        # Check if should be invalidated
+        total_votes = upvotes + downvotes
+        if QualityValidator.should_invalidate(quality_score, total_votes):
+            # Get feedback comments for invalidation reason
+            cursor.execute("""
+                SELECT comment FROM response_feedback
+                WHERE cache_key = ? AND comment IS NOT NULL
+            """, (cache_key,))
+            comments = [row["comment"] for row in cursor.fetchall() if row["comment"]]
+
+            reason = QualityValidator.get_invalidation_reason(
+                quality_score, total_votes, comments
+            )
+
+            cursor.execute("""
+                UPDATE response_cache
+                SET invalidated = 1, invalidation_reason = ?
+                WHERE cache_key = ?
+            """, (reason, cache_key))
+
+        conn.commit()
+        conn.close()
+
+        return quality_score
+
+    def get_feedback_for_response(self, cache_key: str) -> List[Dict]:
+        """
+        Get all feedback for a specific cached response.
+
+        Args:
+            cache_key: Cache key to get feedback for
+
+        Returns:
+            List of feedback dictionaries
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                id, rating, comment, user_agent, timestamp
+            FROM response_feedback
+            WHERE cache_key = ?
+            ORDER BY timestamp DESC
+        """, (cache_key,))
+
+        feedback = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return feedback
+
+    def invalidate_cache_entry(self, cache_key: str, reason: str):
+        """
+        Manually invalidate a cache entry.
+
+        Args:
+            cache_key: Cache key to invalidate
+            reason: Reason for invalidation
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE response_cache
+            SET invalidated = 1, invalidation_reason = ?
+            WHERE cache_key = ?
+        """, (reason, cache_key))
+
+        conn.commit()
+        conn.close()
+
+    def get_quality_stats(self) -> Dict:
+        """
+        Get quality statistics across all cached responses.
+
+        Returns:
+            Dictionary with quality metrics by provider and overall
+        """
+        from .quality import QualityValidator
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Overall quality stats
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_entries,
+                SUM(upvotes) as total_upvotes,
+                SUM(downvotes) as total_downvotes,
+                SUM(invalidated) as invalidated_count,
+                AVG(quality_score) as avg_quality_score
+            FROM response_cache
+        """)
+        overall = dict(cursor.fetchone())
+
+        # Quality by provider
+        cursor.execute("""
+            SELECT
+                provider,
+                COUNT(*) as entry_count,
+                SUM(upvotes) as total_upvotes,
+                SUM(downvotes) as total_downvotes,
+                AVG(quality_score) as avg_quality_score,
+                SUM(upvotes + downvotes) as total_votes
+            FROM response_cache
+            WHERE invalidated = 0
+            GROUP BY provider
+        """)
+        by_provider = [dict(row) for row in cursor.fetchall()]
+
+        # Most highly rated
+        cursor.execute("""
+            SELECT
+                prompt_normalized,
+                provider,
+                model,
+                quality_score,
+                upvotes,
+                downvotes
+            FROM response_cache
+            WHERE quality_score IS NOT NULL AND invalidated = 0
+            ORDER BY quality_score DESC
+            LIMIT 5
+        """)
+        top_rated = [dict(row) for row in cursor.fetchall()]
+
+        # Worst rated (excluding invalidated)
+        cursor.execute("""
+            SELECT
+                prompt_normalized,
+                provider,
+                model,
+                quality_score,
+                upvotes,
+                downvotes
+            FROM response_cache
+            WHERE quality_score IS NOT NULL AND invalidated = 0
+            ORDER BY quality_score ASC
+            LIMIT 5
+        """)
+        worst_rated = [dict(row) for row in cursor.fetchall()]
+
+        # Invalidated entries
+        cursor.execute("""
+            SELECT
+                prompt_normalized,
+                provider,
+                invalidation_reason,
+                quality_score
+            FROM response_cache
+            WHERE invalidated = 1
+            ORDER BY created_at DESC
+        """)
+        invalidated = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+
+        return {
+            "overall": overall,
+            "by_provider": QualityValidator.analyze_provider_quality(by_provider),
+            "top_rated": top_rated,
+            "worst_rated": worst_rated,
+            "invalidated_responses": invalidated
+        }
