@@ -348,8 +348,8 @@ def init_providers() -> dict:
     if api_key := os.getenv("CEREBRAS_API_KEY"):
         providers["cerebras"] = CerebrasProvider(api_key)
 
-    # Local/self-hosted
-    if os.getenv("OLLAMA_API_KEY") or os.getenv("OLLAMA_BASE_URL"):
+    # Local/self-hosted (only if BASE_URL is set)
+    if os.getenv("OLLAMA_BASE_URL"):
         providers["ollama"] = OllamaProvider()
 
     # Fallback aggregator

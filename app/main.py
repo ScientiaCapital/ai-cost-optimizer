@@ -64,6 +64,9 @@ class CompleteResponse(BaseModel):
     tokens_out: int
     cost: float
     total_cost_today: float
+    cache_hit: bool = False
+    original_cost: Optional[float] = None
+    savings: float = 0.0
 
 
 class StatsResponse(BaseModel):
@@ -88,13 +91,15 @@ async def health_check():
 @app.post("/complete", response_model=CompleteResponse)
 async def complete_prompt(request: CompleteRequest):
     """
-    Route and complete a prompt using optimal provider.
+    Route and complete a prompt using optimal provider with caching.
 
     This is the main endpoint that:
-    1. Analyzes prompt complexity
-    2. Routes to appropriate model
-    3. Executes completion
-    4. Tracks cost in database
+    1. Checks response cache for instant results
+    2. Analyzes prompt complexity (if cache miss)
+    3. Routes to appropriate model (if cache miss)
+    4. Executes completion (if cache miss)
+    5. Stores response in cache (if cache miss)
+    6. Tracks cost in database
 
     Args:
         request: CompleteRequest with prompt and optional max_tokens
@@ -106,6 +111,47 @@ async def complete_prompt(request: CompleteRequest):
         HTTPException: If routing or completion fails
     """
     try:
+        # ========== CACHE LOOKUP ==========
+        cached = cost_tracker.check_cache(request.prompt, request.max_tokens)
+
+        if cached:
+            # Cache hit! Return instant response with $0 cost
+            logger.info(f"Cache HIT: {cached['cache_key'][:16]}... (hit_count={cached['hit_count']})")
+
+            # Record cache hit
+            cost_tracker.record_cache_hit(cached["cache_key"])
+
+            # Log as a request with cost=$0
+            cost_tracker.log_request(
+                prompt=request.prompt,
+                complexity=cached["complexity"],
+                provider="cache",
+                model=cached["model"],
+                tokens_in=0,
+                tokens_out=0,
+                cost=0.0
+            )
+
+            total_cost = cost_tracker.get_total_cost()
+
+            return CompleteResponse(
+                response=cached["response"],
+                provider=cached["provider"],
+                model=cached["model"],
+                complexity=cached["complexity"],
+                complexity_metadata={"cached": True, "original_timestamp": cached["created_at"]},
+                tokens_in=cached["tokens_in"],
+                tokens_out=cached["tokens_out"],
+                cost=0.0,
+                total_cost_today=total_cost,
+                cache_hit=True,
+                original_cost=cached["cost"],
+                savings=cached["cost"]
+            )
+
+        # ========== CACHE MISS - NORMAL FLOW ==========
+        logger.info("Cache MISS: routing to LLM provider")
+
         # Analyze complexity
         complexity = score_complexity(request.prompt)
         complexity_metadata = get_complexity_metadata(request.prompt)
@@ -120,6 +166,19 @@ async def complete_prompt(request: CompleteRequest):
             prompt=request.prompt,
             complexity=complexity,
             max_tokens=request.max_tokens
+        )
+
+        # Store in cache for future use
+        cost_tracker.store_in_cache(
+            prompt=request.prompt,
+            max_tokens=request.max_tokens,
+            response=result["response"],
+            provider=result["provider"],
+            model=result["model"],
+            complexity=complexity,
+            tokens_in=result["tokens_in"],
+            tokens_out=result["tokens_out"],
+            cost=result["cost"]
         )
 
         # Log to database
@@ -138,7 +197,7 @@ async def complete_prompt(request: CompleteRequest):
 
         logger.info(
             f"Completed: provider={result['provider']}, "
-            f"cost=${result['cost']:.6f}, total=${total_cost:.2f}"
+            f"cost=${result['cost']:.6f}, total=${total_cost:.2f}, cached=True"
         )
 
         return CompleteResponse(
@@ -150,7 +209,10 @@ async def complete_prompt(request: CompleteRequest):
             tokens_in=result["tokens_in"],
             tokens_out=result["tokens_out"],
             cost=result["cost"],
-            total_cost_today=total_cost
+            total_cost_today=total_cost,
+            cache_hit=False,
+            original_cost=None,
+            savings=0.0
         )
 
     except RoutingError as e:
@@ -235,6 +297,28 @@ async def get_recommendation(prompt: str):
         }
 
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/cache/stats")
+async def get_cache_stats():
+    """
+    Get response cache statistics.
+
+    Returns:
+        Cache statistics including:
+        - total_entries: Number of unique cached responses
+        - total_hits: How many times cache was used
+        - total_savings: Money saved from cache hits
+        - hit_rate_percent: Cache hit rate percentage
+        - popular_queries: Most frequently cached queries
+    """
+    try:
+        stats = cost_tracker.get_cache_stats()
+        return stats
+
+    except Exception as e:
+        logger.error(f"Error fetching cache stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
