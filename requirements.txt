@@ -18,3 +18,10 @@ optillm>=0.1.0
 # Tokenizer R&D
 tokenizers>=0.19.1
 tqdm>=4.66.4
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+httpx>=0.24.1  # for async test client
