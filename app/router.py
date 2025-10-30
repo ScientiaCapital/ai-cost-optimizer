@@ -1,9 +1,13 @@
 """Routing logic for selecting optimal model based on complexity."""
-from typing import Tuple, Dict, Any
+import os
+import logging
+from typing import Tuple, Dict, Any, Optional
 from .providers import (
     GeminiProvider, ClaudeProvider, OpenRouterProvider,
     CerebrasProvider, OllamaProvider
 )
+
+logger = logging.getLogger(__name__)
 
 
 class RoutingError(Exception):
@@ -14,32 +18,110 @@ class RoutingError(Exception):
 class Router:
     """Routes prompts to optimal provider based on complexity."""
 
-    def __init__(self, providers: Dict[str, Any]):
+    def __init__(self, providers: Dict[str, Any], enable_learning: bool = True):
         """
         Initialize router with available providers.
 
         Args:
             providers: Dictionary of {provider_name: provider_instance}
+            enable_learning: Whether to use intelligent routing based on historical data
         """
         self.providers = providers
+        self.enable_learning = enable_learning
+        self.analyzer = None
 
-    def select_provider(self, complexity: str) -> Tuple[str, str, Any]:
+        # Initialize learning module if enabled
+        if self.enable_learning:
+            try:
+                from .learning import QueryPatternAnalyzer
+                db_path = os.getenv("DATABASE_PATH", "optimizer.db")
+                self.analyzer = QueryPatternAnalyzer(db_path)
+                logger.info("Intelligent routing enabled with learning module")
+            except Exception as e:
+                logger.warning(f"Failed to initialize learning module: {e}. Falling back to heuristic routing.")
+                self.enable_learning = False
+
+    def select_provider(self, complexity: str, prompt: Optional[str] = None) -> Tuple[str, str, Any]:
         """
         Select optimal provider and model based on complexity.
 
-        Priority for simple queries:
+        Uses intelligent routing (historical data) when available, otherwise
+        falls back to heuristic routing.
+
+        Priority for simple queries (heuristic):
         1. Ollama (free, local)
         2. Cerebras (ultra-fast, cheap)
         3. Gemini (free tier, good quality)
         4. OpenRouter (fallback)
 
-        Priority for complex queries:
+        Priority for complex queries (heuristic):
         1. Claude Haiku (best quality/cost)
         2. Cerebras 70B (fast, decent quality)
         3. OpenRouter (fallback)
 
         Args:
             complexity: Classification from complexity scorer (simple/complex)
+            prompt: Optional prompt for intelligent routing
+
+        Returns:
+            Tuple of (provider_name, model_name, provider_instance)
+
+        Raises:
+            RoutingError: If no suitable provider is available
+        """
+        # Try intelligent routing first if enabled and prompt provided
+        if self.enable_learning and self.analyzer and prompt:
+            recommendation = self._get_intelligent_recommendation(prompt, complexity)
+            if recommendation:
+                provider_name = recommendation["provider"]
+                model_name = recommendation["model"]
+                if provider_name in self.providers:
+                    logger.info(
+                        f"Intelligent routing: {provider_name}/{model_name} "
+                        f"(confidence: {recommendation['confidence']}, "
+                        f"pattern: {recommendation['pattern']})"
+                    )
+                    return (provider_name, model_name, self.providers[provider_name])
+                else:
+                    logger.warning(
+                        f"Recommended provider '{provider_name}' not available. "
+                        f"Falling back to heuristic routing."
+                    )
+
+        # Fallback to heuristic routing
+        return self._heuristic_routing(complexity)
+
+    def _get_intelligent_recommendation(
+        self,
+        prompt: str,
+        complexity: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get provider recommendation from learning module.
+
+        Args:
+            prompt: User prompt
+            complexity: Complexity classification
+
+        Returns:
+            Recommendation dict or None if insufficient data
+        """
+        try:
+            available_providers = list(self.providers.keys())
+            recommendation = self.analyzer.recommend_provider(
+                prompt=prompt,
+                complexity=complexity,
+                available_providers=available_providers
+            )
+            return recommendation
+        except Exception as e:
+            logger.error(f"Error getting intelligent recommendation: {e}")
+            return None
+
+    def _heuristic_routing(self, complexity: str) -> Tuple[str, str, Any]:
+        """Heuristic-based routing (original logic).
+
+        Args:
+            complexity: Complexity classification
 
         Returns:
             Tuple of (provider_name, model_name, provider_instance)
@@ -107,8 +189,8 @@ class Router:
             RoutingError: If routing or execution fails
         """
         try:
-            # Select provider
-            provider_name, model_name, provider = self.select_provider(complexity)
+            # Select provider (with intelligent routing if available)
+            provider_name, model_name, provider = self.select_provider(complexity, prompt=prompt)
 
             # Execute completion
             if provider_name == "openrouter":

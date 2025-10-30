@@ -10,3 +10,7 @@ httpx==0.25.1
 
 # Environment variables
 python-dotenv==1.0.0
+
+# Cerebras Inference + CePO
+cerebras_cloud_sdk>=0.0.1
+optillm>=0.1.0

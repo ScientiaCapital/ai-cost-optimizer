@@ -436,6 +436,42 @@ async def get_quality_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/insights")
+async def get_learning_insights():
+    """
+    Get intelligent routing insights from learning module.
+
+    Returns:
+        Learning statistics including:
+        - overall: Total queries, cache hits, rated responses
+        - by_provider: Provider performance with quality and cost metrics
+        - by_complexity: Performance breakdown by complexity level
+        - learning_active: Whether intelligent routing has sufficient data
+    """
+    try:
+        if not router.enable_learning or not router.analyzer:
+            return {
+                "learning_active": False,
+                "message": "Intelligent routing not enabled. Need more historical data.",
+                "overall": {
+                    "unique_queries": 0,
+                    "total_requests": 0,
+                    "total_cache_hits": 0,
+                    "rated_responses": 0,
+                    "avg_quality": None
+                },
+                "by_provider": [],
+                "by_complexity": []
+            }
+
+        insights = router.analyzer.get_insights()
+        return insights
+
+    except Exception as e:
+        logger.error(f"Error fetching learning insights: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Run the application
 if __name__ == "__main__":
     import uvicorn
