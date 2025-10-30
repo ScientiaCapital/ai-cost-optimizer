@@ -22,8 +22,12 @@ class CostOptimizerUser(HttpUser):
         })
 
     @task(2)
-    def complete_medium_prompt(self):
-        """Test medium complexity prompts (30% of load)."""
+    def complete_medium_complexity_prompt(self):
+        """Test medium complexity prompts (30% of load).
+
+        Note: Prompt "Write a function..." contains keyword "function"
+        which auto-classifies as complex by the router's complexity analyzer.
+        """
         self.client.post("/v1/complete", json={
             "prompt": self.prompts[2],
             "max_tokens": 500
