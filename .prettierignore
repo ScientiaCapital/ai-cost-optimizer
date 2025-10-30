@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+dist
+build
+*.min.js
+*.min.css
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.vercel
+.DS_Store
+

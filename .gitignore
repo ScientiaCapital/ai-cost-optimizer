@@ -29,10 +29,11 @@ env/
 env.bak/
 venv.bak/
 
-# Environment variables
+# Environment variables (exclude sensitive files, but include .env.example)
 .env
 .env.local
 .env.*.local
+!/.env.example
 
 # Database
 *.db
@@ -71,6 +72,22 @@ build/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# ruff
+.ruff_cache/
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Next.js
+next-app/.next/
+next-app/out/
+next-app/.vercel/
 
 # Pyre
 .pyre/

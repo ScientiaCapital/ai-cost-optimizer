@@ -1,13 +1,18 @@
 """
 Quick test script to validate the AI Cost Optimizer setup
+Note: This script is a placeholder and needs to be updated to work with the current app architecture.
+The app uses a different routing system than what's tested here.
 """
 import asyncio
-from router import LLMRouter
-from cost_tracker import CostTracker
+from app.router import Router
+from app.providers import init_providers
+from app.complexity import score_complexity
+from app.database import CostTracker
 
 async def test_routing():
     """Test routing logic"""
-    router = LLMRouter()
+    providers = init_providers()
+    router = Router(providers)
     
     # Test different complexity levels
     test_prompts = [
@@ -17,22 +22,33 @@ async def test_routing():
     ]
     
     for prompt in test_prompts:
-        model, complexity = await router.route_request(prompt)
+        complexity = score_complexity(prompt)
+        routing_info = router.get_routing_info(complexity)
         print(f"\nPrompt: {prompt[:50]}...")
         print(f"Complexity: {complexity:.2f}")
-        print(f"Selected Model: {model}")
+        print(f"Routing: {routing_info}")
 
 def test_cost_calculation():
     """Test cost tracking"""
     tracker = CostTracker()
     
-    test_text = "This is a test prompt for token counting"
-    tokens = tracker.count_tokens(test_text)
-    cost = tracker.calculate_cost("openai/gpt-3.5-turbo", tokens, 100)
+    # Test database operations
+    test_prompt = "This is a test prompt for token counting"
+    complexity = score_complexity(test_prompt)
     
-    print(f"\nCost Calculation Test:")
-    print(f"Input tokens: {tokens}")
-    print(f"Estimated cost: ${cost}")
+    # Log a test request
+    tracker.log_request(
+        prompt=test_prompt,
+        complexity=complexity,
+        provider="test",
+        model="test-model",
+        tokens_in=10,
+        tokens_out=50,
+        cost=0.001
+    )
+    
+    print(f"\nCost Tracking Test:")
+    print(f"Total cost: ${tracker.get_total_cost()}")
 
 if __name__ == "__main__":
     print("=== AI Cost Optimizer - System Test ===\n")
@@ -44,4 +60,4 @@ if __name__ == "__main__":
     test_cost_calculation()
     
     print("\n✅ Core components working!")
-    print("Next: Set up .env file with your OpenRouter API key")
+    print("Next: Set up .env file with your API keys")
