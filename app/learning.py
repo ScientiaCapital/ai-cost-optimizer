@@ -78,8 +78,8 @@ class QueryPatternAnalyzer:
         # Calculate date threshold
         date_threshold = (datetime.now() - timedelta(days=days)).isoformat()
 
-        # Query for provider stats
-        cursor.execute("""
+        # Query for provider stats with optional pattern filter using prompt keywords
+        base_query = """
             SELECT
                 provider,
                 model,
@@ -93,9 +93,24 @@ class QueryPatternAnalyzer:
             FROM response_cache
             WHERE complexity = ?
                 AND created_at >= ?
+        """
+
+        params: List[object] = [complexity, date_threshold]
+
+        # Apply keyword-based filter on prompt_normalized when a pattern is provided
+        if pattern and pattern in self.QUERY_PATTERNS:
+            keywords = self.QUERY_PATTERNS.get(pattern, [])
+            if keywords:
+                like_clauses = " OR ".join(["prompt_normalized LIKE ?"] * len(keywords))
+                base_query += f" AND ({like_clauses})\n"
+                params.extend([f"%{kw}%" for kw in keywords])
+
+        base_query += """
             GROUP BY provider, model
             ORDER BY avg_quality DESC, avg_cost ASC
-        """, (complexity, date_threshold))
+        """
+
+        cursor.execute(base_query, params)
 
         results = []
         for row in cursor.fetchall():

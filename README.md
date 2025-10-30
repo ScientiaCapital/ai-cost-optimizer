@@ -196,12 +196,18 @@ curl http://localhost:8000/providers
 GOOGLE_API_KEY=your-key-here
 ANTHROPIC_API_KEY=your-key-here
 OPENROUTER_API_KEY=your-key-here
+CEREBRAS_API_KEY=your-key-here
 
 # Optional
 DATABASE_PATH=optimizer.db  # Database location
 PORT=8000                   # Server port
 LOG_LEVEL=INFO              # Logging verbosity
 ```
+
+## Cerebras + CePO
+
+- Next.js Cerebras endpoint: `next-app/app/api/cerebras/chat/route.ts` (set `CEREBRAS_API_KEY`).
+- CePO experiment: see `experiments/README.md` and run `experiments/cepo_experiment.py`.
 
 ### Pricing
 
