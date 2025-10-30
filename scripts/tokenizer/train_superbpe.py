@@ -47,24 +47,51 @@ def train_bpe(data_dir: Path, out_dir: Path, vocab_size: int) -> None:
 
 
 def train_superbpe(data_dir: Path, out_dir: Path, vocab_size: int) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files = [str(p) for p in iter_corpus_files(data_dir)]
+    if not files:
+        raise RuntimeError("No shards found in data directory for SuperBPE training")
+
+    # Try Python API first, then fallback to CLI if available
     try:
         import superbpe  # type: ignore
-    except Exception as e:
-        raise RuntimeError(
-            "superbpe package not installed. See https://github.com/PythonNut/superbpe"
-        ) from e
+        # Heuristic API attempt; adjust when upstream API is confirmed
+        if hasattr(superbpe, "train"):
+            superbpe.train(
+                input_files=files,
+                vocab_size=vocab_size,
+                output_dir=str(out_dir),
+                pretokenization_curriculum=True,
+            )
+            return
+    except Exception:
+        pass
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # CLI fallback: try invoking a `superbpe` executable with common flags
+    import shutil, subprocess
+    cli = shutil.which("superbpe") or shutil.which("superbpe-cli") or shutil.which("python")
+    if cli is None:
+        raise RuntimeError("SuperBPE CLI not found. Install via: pip install git+https://github.com/PythonNut/superbpe")
 
-    # This is a placeholder API; refer to the superbpe repo for the exact CLI/API.
-    # Example pseudocode-like usage:
-    # superbpe.train(
-    #   input_files=[str(p) for p in iter_corpus_files(data_dir)],
-    #   vocab_size=vocab_size,
-    #   output_dir=str(out_dir),
-    #   pretokenization_curriculum=True,
-    # )
-    raise NotImplementedError("Integrate superbpe training per upstream API.")
+    if cli.endswith("python"):
+        cmd = [cli, "-m", "superbpe"]
+    else:
+        cmd = [cli]
+
+    # Generic argument guess; update when upstream docs are finalized
+    cmd += [
+        "train",
+        "--vocab-size", str(vocab_size),
+        "--output", str(out_dir),
+    ]
+    # Append inputs (many CLIs accept multiple --input flags)
+    for f in files:
+        cmd += ["--input", f]
+
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"SuperBPE CLI failed: {' '.join(cmd)}") from e
 
 
 def main() -> None:

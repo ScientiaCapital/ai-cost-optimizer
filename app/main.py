@@ -51,6 +51,7 @@ class CompleteRequest(BaseModel):
     """Request model for completion endpoint."""
     prompt: str = Field(..., min_length=1, description="User prompt")
     max_tokens: Optional[int] = Field(1000, ge=1, le=4000, description="Maximum response tokens")
+    tokenizer_id: Optional[str] = Field(None, description="Optional HF repo id for tokenization metrics (e.g., 'UW/OLMo2-8B-SuperBPE-t180k')")
 
 
 class CompleteResponse(BaseModel):
@@ -68,6 +69,10 @@ class CompleteResponse(BaseModel):
     original_cost: Optional[float] = None
     savings: float = 0.0
     cache_key: Optional[str] = None
+    tokenizer_id: Optional[str] = None
+    tokenizer_tokens_in: Optional[int] = None
+    tokenizer_bytes_per_token: Optional[float] = None
+    tokenizer_tokens_per_byte: Optional[float] = None
 
 
 class StatsResponse(BaseModel):
@@ -151,6 +156,17 @@ async def complete_prompt(request: CompleteRequest):
 
             total_cost = cost_tracker.get_total_cost()
 
+            # Optional tokenizer metrics (best-effort, no failure)
+            tokenizer_id = None
+            tokenizer_tokens_in = None
+            tokenizer_bytes_per_token = None
+            tokenizer_tokens_per_byte = None
+            try:
+                from .tokenizer_registry import estimate_tokenization_metrics
+                tokenizer_id = None  # cache hit path lacks requested tokenizer; skip
+            except Exception:
+                pass
+
             return CompleteResponse(
                 response=cached["response"],
                 provider=cached["provider"],
@@ -164,7 +180,11 @@ async def complete_prompt(request: CompleteRequest):
                 cache_hit=True,
                 original_cost=cached["cost"],
                 savings=cached["cost"],
-                cache_key=cached["cache_key"]
+                cache_key=cached["cache_key"],
+                tokenizer_id=tokenizer_id,
+                tokenizer_tokens_in=tokenizer_tokens_in,
+                tokenizer_bytes_per_token=tokenizer_bytes_per_token,
+                tokenizer_tokens_per_byte=tokenizer_tokens_per_byte,
             )
 
         # ========== CACHE MISS - NORMAL FLOW ==========
@@ -221,6 +241,20 @@ async def complete_prompt(request: CompleteRequest):
         # Generate cache key for feedback
         cache_key = cost_tracker._generate_cache_key(request.prompt, request.max_tokens)
 
+        # Optional tokenizer metrics
+        tokenizer_id = request.tokenizer_id
+        tokenizer_tokens_in = None
+        tokenizer_bytes_per_token = None
+        tokenizer_tokens_per_byte = None
+        if tokenizer_id:
+            try:
+                from .tokenizer_registry import estimate_tokenization_metrics
+                est = estimate_tokenization_metrics(request.prompt, tokenizer_id)
+                if est is not None:
+                    tokenizer_tokens_in, tokenizer_bytes_per_token, tokenizer_tokens_per_byte = est
+            except Exception as ex:
+                logger.warning(f"Tokenizer metrics unavailable: {ex}")
+
         return CompleteResponse(
             response=result["response"],
             provider=result["provider"],
@@ -234,7 +268,11 @@ async def complete_prompt(request: CompleteRequest):
             cache_hit=False,
             original_cost=None,
             savings=0.0,
-            cache_key=cache_key
+            cache_key=cache_key,
+            tokenizer_id=tokenizer_id,
+            tokenizer_tokens_in=tokenizer_tokens_in,
+            tokenizer_bytes_per_token=tokenizer_bytes_per_token,
+            tokenizer_tokens_per_byte=tokenizer_tokens_per_byte,
         )
 
     except RoutingError as e:

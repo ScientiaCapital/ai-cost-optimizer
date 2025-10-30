@@ -80,3 +80,7 @@ dmypy.json
 
 # Cython
 cython_debug/
+
+# Tokenizer artifacts
+.venv312/
+artifacts/
