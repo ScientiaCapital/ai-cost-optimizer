@@ -1,0 +1,109 @@
+{
+  "name": "ai-cost-optimizer",
+  "version": "1.0.0",
+  "description": "Multi-LLM cost optimizer with smart routing - CPU optimized",
+  "category": "api",
+  "image": "your-dockerhub-username/ai-cost-optimizer:latest",
+  "readme": "AI Cost Optimizer - Intelligent LLM routing for cost efficiency. Automatically selects the most cost-effective model based on prompt complexity. Supports 40+ models across 8 providers.",
+  "ports": [
+    {
+      "containerPort": 8000,
+      "protocol": "http",
+      "name": "API"
+    }
+  ],
+  "env": [
+    {
+      "key": "ANTHROPIC_API_KEY",
+      "value": "",
+      "description": "Anthropic API key for Claude models",
+      "required": false
+    },
+    {
+      "key": "GOOGLE_API_KEY",
+      "value": "",
+      "description": "Google AI API key for Gemini models",
+      "required": false
+    },
+    {
+      "key": "CEREBRAS_API_KEY",
+      "value": "",
+      "description": "Cerebras API key for Llama models",
+      "required": false
+    },
+    {
+      "key": "DEEPSEEK_API_KEY",
+      "value": "",
+      "description": "DeepSeek API key",
+      "required": false
+    },
+    {
+      "key": "OPENROUTER_API_KEY",
+      "value": "",
+      "description": "OpenRouter API key for multi-provider access",
+      "required": false
+    },
+    {
+      "key": "HUGGINGFACE_API_KEY",
+      "value": "",
+      "description": "HuggingFace API key",
+      "required": false
+    },
+    {
+      "key": "DEFAULT_MONTHLY_BUDGET",
+      "value": "100.00",
+      "description": "Default monthly budget in USD",
+      "required": true
+    },
+    {
+      "key": "DATABASE_URL",
+      "value": "sqlite:////data/optimizer.db",
+      "description": "Database URL (uses persistent volume)",
+      "required": true
+    },
+    {
+      "key": "PYTHONUNBUFFERED",
+      "value": "1",
+      "description": "Enable Python unbuffered output for better logging",
+      "required": false
+    }
+  ],
+  "volumes": [
+    {
+      "containerPath": "/data",
+      "size": "5GB",
+      "description": "Persistent storage for SQLite database and logs"
+    }
+  ],
+  "resources": {
+    "cpu": "2-4",
+    "memory": "4-8Gi",
+    "gpu": "0",
+    "type": "cpu"
+  },
+  "autoscaling": {
+    "enabled": false,
+    "min": 1,
+    "max": 3,
+    "targetCPU": 70
+  },
+  "healthCheck": {
+    "path": "/health",
+    "interval": 30,
+    "timeout": 10,
+    "startPeriod": 10,
+    "retries": 3
+  },
+  "deployment": {
+    "strategy": "rolling",
+    "maxUnavailable": 0,
+    "maxSurge": 1
+  },
+  "notes": [
+    "At least one provider API key must be configured for the service to function",
+    "The service will automatically enable providers based on available API keys",
+    "Database is stored in /data volume and persists across restarts",
+    "Default budget can be overridden per user via API",
+    "Supports both local (Ollama) and cloud providers"
+  ]
+}
