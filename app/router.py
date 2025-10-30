@@ -4,7 +4,7 @@ import logging
 from typing import Tuple, Dict, Any, Optional
 from .providers import (
     GeminiProvider, ClaudeProvider, OpenRouterProvider,
-    CerebrasProvider, OllamaProvider
+    CerebrasProvider
 )
 
 logger = logging.getLogger(__name__)
@@ -49,10 +49,9 @@ class Router:
         falls back to heuristic routing.
 
         Priority for simple queries (heuristic):
-        1. Ollama (free, local)
-        2. Cerebras (ultra-fast, cheap)
-        3. Gemini (free tier, good quality)
-        4. OpenRouter (fallback)
+        1. Cerebras (ultra-fast, cheap)
+        2. Gemini (free tier, good quality)
+        3. OpenRouter (fallback)
 
         Priority for complex queries (heuristic):
         1. Claude Haiku (best quality/cost)
@@ -131,11 +130,7 @@ class Router:
         """
         # Simple queries: Prioritize free/cheap
         if complexity == "simple":
-            # 1. Ollama - FREE and local
-            if "ollama" in self.providers:
-                return ("ollama", "llama3", self.providers["ollama"])
-
-            # 2. Cerebras - Ultra-fast and cheap
+            # 1. Cerebras - Ultra-fast and cheap
             if "cerebras" in self.providers:
                 return ("cerebras", "llama3.1-8b", self.providers["cerebras"])
 
@@ -237,7 +232,6 @@ class Router:
 
             # Get cost estimates (per 1M tokens)
             cost_map = {
-                "ollama": {"input_per_1m": "FREE (local)", "output_per_1m": "FREE (local)"},
                 "cerebras": {"input_per_1m": "$0.10", "output_per_1m": "$0.10"},
                 "gemini": {"input_per_1m": "$0.075", "output_per_1m": "$0.30"},
                 "claude": {"input_per_1m": "$0.25", "output_per_1m": "$1.25"},
@@ -263,12 +257,7 @@ class Router:
         """Get human-readable explanation for routing decision."""
         if complexity == "simple":
             # Check which provider is actually available
-            if "ollama" in self.providers:
-                return (
-                    "Simple query detected (< 100 tokens, no complexity keywords). "
-                    "Using Ollama for FREE local inference."
-                )
-            elif "cerebras" in self.providers:
+            if "cerebras" in self.providers:
                 return (
                     "Simple query detected (< 100 tokens, no complexity keywords). "
                     "Using Cerebras for ultra-fast, cheap inference."

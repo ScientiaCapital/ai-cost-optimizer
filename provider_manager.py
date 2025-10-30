@@ -5,7 +5,6 @@ from providers.anthropic_provider import AnthropicProvider
 from providers.google_provider import GoogleProvider
 from providers.cerebras_provider import CerebrasProvider
 from providers.deepseek_provider import DeepseekProvider
-from providers.ollama_provider import OllamaProvider
 from providers.huggingface_provider import HuggingFaceProvider
 import config
 
@@ -25,7 +24,7 @@ class ProviderManager:
                 continue
             
             api_key = cfg.get("api_key")
-            if not api_key and provider_name != "ollama":
+            if not api_key:
                 continue
             
             try:
@@ -39,8 +38,6 @@ class ProviderManager:
                     self.providers[provider_name] = CerebrasProvider(api_key)
                 elif provider_name == "deepseek":
                     self.providers[provider_name] = DeepseekProvider(api_key)
-                elif provider_name == "ollama":
-                    self.providers[provider_name] = OllamaProvider(cfg.get("base_url"))
                 elif provider_name == "huggingface":
                     self.providers[provider_name] = HuggingFaceProvider(api_key)
             except Exception as e:

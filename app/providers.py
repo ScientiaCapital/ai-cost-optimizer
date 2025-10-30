@@ -277,57 +277,6 @@ class CerebrasProvider:
         return input_cost + output_cost
 
 
-class OllamaProvider:
-    """Ollama provider - local models, completely free."""
-
-    def __init__(self, base_url: str = None):
-        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-
-    async def complete(self, prompt: str, max_tokens: int = 1000, model: str = "llama3") -> Tuple[str, int, int, float]:
-        """
-        Send completion request to Ollama.
-
-        Returns:
-            Tuple of (response_text, input_tokens, output_tokens, cost)
-        """
-        url = f"{self.base_url}/api/generate"
-
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "num_predict": max_tokens,
-                "temperature": 0.7
-            }
-        }
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            try:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                data = response.json()
-
-                # Extract response text
-                text = data["response"]
-
-                # Ollama doesn't provide exact token counts, estimate
-                input_tokens = int(len(prompt.split()) * 1.3)
-                output_tokens = int(len(text.split()) * 1.3)
-
-                # Local models are free
-                cost = 0.0
-
-                return text, input_tokens, output_tokens, cost
-
-            except httpx.HTTPError as e:
-                raise ProviderError(f"Ollama API error: {str(e)}")
-
-    def calculate_cost(self, input_tokens: int, output_tokens: int) -> float:
-        """Local models are always free."""
-        return 0.0
-
-
 def init_providers() -> dict:
     """
     Initialize available providers based on environment variables.
@@ -347,10 +296,6 @@ def init_providers() -> dict:
     # Ultra-fast providers
     if api_key := os.getenv("CEREBRAS_API_KEY"):
         providers["cerebras"] = CerebrasProvider(api_key)
-
-    # Local/self-hosted (only if BASE_URL is set)
-    if os.getenv("OLLAMA_BASE_URL"):
-        providers["ollama"] = OllamaProvider()
 
     # Fallback aggregator
     if api_key := os.getenv("OPENROUTER_API_KEY"):

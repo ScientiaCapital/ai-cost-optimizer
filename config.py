@@ -25,10 +25,6 @@ PROVIDER_CONFIGS = {
         "enabled": bool(os.getenv("DEEPSEEK_API_KEY")),
         "api_key": os.getenv("DEEPSEEK_API_KEY")
     },
-    "ollama": {
-        "enabled": bool(os.getenv("OLLAMA_ENABLED", "false").lower() == "true"),
-        "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    },
     "huggingface": {
         "enabled": bool(os.getenv("HUGGINGFACE_API_KEY")),
         "api_key": os.getenv("HUGGINGFACE_API_KEY")
@@ -55,9 +51,24 @@ DATABASE_URL = get_database_url()
 DEFAULT_MONTHLY_BUDGET = float(os.getenv("DEFAULT_MONTHLY_BUDGET", "100.0"))
 ALERT_THRESHOLDS = [0.5, 0.8, 0.9]
 
+# =============================================================================
+# ALERT CONFIGURATION
+# =============================================================================
+
+# Email Alerts (SendGrid)
+ALERT_EMAIL_ENABLED = os.getenv("ALERT_EMAIL_ENABLED", "false").lower() == "true"
+ALERT_EMAIL_TO = os.getenv("ALERT_EMAIL_TO")
+ALERT_EMAIL_FROM = os.getenv("ALERT_EMAIL_FROM", "alerts@ai-cost-optimizer.com")
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+
+# Webhook Alerts (Slack, Discord, custom)
+ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL")
+
+# Logging (always enabled, writes to budget_alerts.log)
+BUDGET_ALERTS_LOG_FILE = os.getenv("BUDGET_ALERTS_LOG_FILE", "budget_alerts.log")
+
 # Model tier mappings - organized by complexity and cost
 PROVIDER_MODELS = {
-    "ollama": ["llama2", "llama3", "mistral", "codellama", "phi"],
     "cerebras": ["llama3.1-8b", "llama3.1-70b"],
     "deepseek": ["deepseek-chat", "deepseek-coder"],
     "google": ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-pro"],
@@ -68,9 +79,7 @@ PROVIDER_MODELS = {
 
 MODEL_TIERS = {
     "free": [
-        # Free/local models
-        ("ollama", "llama3"),
-        ("ollama", "mistral"),
+        # Free tier models
         ("google", "gemini-2.0-flash-exp"),
     ],
     "cheap": [

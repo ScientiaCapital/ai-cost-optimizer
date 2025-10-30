@@ -14,12 +14,12 @@
 - ✅ **GeminiProvider** - Google Gemini Flash ($0.075/1M input)
 - ✅ **ClaudeProvider** - Anthropic Claude Haiku ($0.25/1M input)
 - ✅ **CerebrasProvider** - Ultra-fast Llama models ($0.10/1M)
-- ✅ **OllamaProvider** - Local models (FREE)
+- ✅ **Provider** - Local models (FREE)
 - ✅ **OpenRouterProvider** - Fallback aggregator (varies)
 - All return consistent tuple: `(text, tokens_in, tokens_out, cost)`
 
 **`app/router.py`** - Smart Routing Logic
-- Simple queries: Ollama > Cerebras > Gemini > OpenRouter
+- Simple queries:  > Cerebras > Gemini > OpenRouter
 - Complex queries: Claude > Cerebras 70B > OpenRouter
 - Clear error handling
 - Routing explanations
@@ -82,7 +82,7 @@
 ```python
 "What is AI?" 
 → complexity=simple (4 tokens, no keywords)
-→ routes to Ollama/Cerebras/Gemini (cheapest available)
+→ routes to /Cerebras/Gemini (cheapest available)
 → cost: $0.00 - $0.000003
 
 "Explain the architecture of microservices"
@@ -109,7 +109,6 @@ Service checks environment variables and enables only configured providers:
 ```
 GOOGLE_API_KEY=xxx → enables "gemini"
 CEREBRAS_API_KEY=xxx → enables "cerebras"
-OLLAMA_BASE_URL=xxx → enables "ollama"
 ```
 
 ### ✅ MCP Tool in Claude Desktop
@@ -127,12 +126,11 @@ Response includes:
 
 ## Provider Details
 
-### Ollama (FREE)
+###  (FREE)
 - **Status**: ✅ Implemented
 - **Cost**: $0.00
 - **Speed**: Medium
 - **Best for**: Local development, privacy
-- **Setup**: Install Ollama, `ollama pull llama3`
 
 ### Cerebras (FAST)
 - **Status**: ✅ Implemented
@@ -227,7 +225,7 @@ SQLite (optimizer.db)
 ## Cost Estimates
 
 ### Example: 100 Simple Queries
-- **Ollama**: $0.00 (FREE)
+- ****: $0.00 (FREE)
 - **Cerebras**: $0.01 (ultra-fast)
 - **Gemini**: $0.01 (free tier up to limit)
 
@@ -237,8 +235,8 @@ SQLite (optimizer.db)
 - **Gemini**: $0.45
 
 ### Daily Usage (50 simple, 20 complex)
-- **With Ollama/Cerebras**: ~$0.10/day
-- **Without Ollama**: ~$0.20/day
+- **With /Cerebras**: ~$0.10/day
+- **Without **: ~$0.20/day
 - **Monthly**: ~$3-6/month
 
 ## Files You Need to Touch

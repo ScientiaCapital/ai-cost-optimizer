@@ -4,7 +4,7 @@
 
 Simplified AI Cost Optimizer with:
 - **Smart Routing**: Auto-selects cheapest model based on complexity
-- **5 Providers**: Ollama (free), Cerebras (fast), Gemini (free tier), Claude (quality), OpenRouter (fallback)
+- **5 Providers**:  (free), Cerebras (fast), Gemini (free tier), Claude (quality), OpenRouter (fallback)
 - **SQLite Tracking**: Persistent cost history
 - **MCP Integration**: Works with Claude Desktop
 
@@ -17,8 +17,7 @@ Edit `/Users/tmkipper/Desktop/tk_projects/ai-cost-optimizer/.env`:
 ```bash
 # Pick at least ONE provider:
 
-# FREE (if you have local Ollama)
-OLLAMA_BASE_URL=http://localhost:11434
+# FREE (if you have local )
 
 # ULTRA-FAST & CHEAP
 CEREBRAS_API_KEY=your-key-from-cloud.cerebras.ai
@@ -91,14 +90,14 @@ Use the cost optimizer to answer: What is quantum computing?
 ```
 
 Expected response:
-- Answer from optimal provider (Ollama/Cerebras/Gemini based on what's configured)
+- Answer from optimal provider (/Cerebras/Gemini based on what's configured)
 - Cost breakdown
 - Provider used
 
 ## 🎯 Routing Logic
 
 **Simple queries** (< 100 tokens, no keywords):
-1. Ollama (FREE) → 2. Cerebras ($0.10/1M) → 3. Gemini (FREE tier) → 4. OpenRouter
+1.  (FREE) → 2. Cerebras ($0.10/1M) → 3. Gemini (FREE tier) → 4. OpenRouter
 
 **Complex queries** (long or keywords like "explain", "analyze"):
 1. Claude Haiku ($0.25/1M) → 2. Cerebras 70B ($0.60/1M) → 3. OpenRouter
@@ -107,7 +106,7 @@ Expected response:
 
 | Provider | Speed | Cost | Best For |
 |----------|-------|------|----------|
-| **Ollama** | Medium | FREE | Local testing, privacy |
+| **** | Medium | FREE | Local testing, privacy |
 | **Cerebras** | ⚡ FASTEST | $0.10/1M | Speed matters, simple queries |
 | **Gemini** | Fast | FREE tier | Testing, light usage |
 | **Claude** | Medium | $0.25/1M | Complex queries, best quality |
@@ -121,16 +120,13 @@ Get API keys:
 - **Anthropic Claude**: https://console.anthropic.com/
 - **OpenRouter**: https://openrouter.ai/keys
 
-For Ollama:
+For :
 ```bash
-# Install Ollama
-brew install ollama  # or download from ollama.ai
+# Install 
 
 # Pull a model
-ollama pull llama3
 
 # Start server (runs automatically on Mac)
-ollama serve
 ```
 
 ## 💡 Tips
@@ -139,7 +135,7 @@ ollama serve
 
 **Add Cerebras** - Super fast, very cheap
 
-**Use Ollama** - Completely free if you have a decent Mac (M1+)
+**Use ** - Completely free if you have a decent Mac (M1+)
 
 **Claude for quality** - When you need best reasoning
 

@@ -249,7 +249,7 @@ The optimizer automatically categorizes prompts into tiers:
 
 | Tier | Complexity | Example Tasks | Models | Cost/M Tokens |
 |------|------------|---------------|--------|---------------|
-| **Free** | 0.0-0.2 | Simple facts, definitions, basic Q&A | Gemini 2.0 Flash, Ollama | $0 |
+| **Free** | 0.0-0.2 | Simple facts, definitions, basic Q&A | Gemini 2.0 Flash | $0 |
 | **Cheap** | 0.2-0.4 | Code snippets, summaries, translations | Cerebras, DeepSeek, Haiku | $0.1-1 |
 | **Medium** | 0.4-0.7 | Analysis, complex explanations, refactoring | Gemini Pro, Sonnet | $1-5 |
 | **Premium** | 0.7-1.0 | Architecture design, research papers, complex code | Opus, GPT-4 | $5-75 |

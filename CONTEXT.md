@@ -87,7 +87,7 @@ This is a **personal learning project** that solves a real problem I face daily.
   - DeepSeek (Chinese specialist)
   - OpenRouter (gateway to 100+ models)
   - HuggingFace (open models)
-  - Ollama (local/free)
+  -  (local/free)
   - Cartesia (partial)
 - Cost tracking with token counting
 - Budget management with configurable thresholds
