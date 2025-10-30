@@ -1,8 +1,3 @@
-# MCP SDK
+# MCP Server Dependencies
 mcp>=0.9.0
-
-# HTTP client for API calls
 httpx>=0.25.0
-
-# Async support
-asyncio-compat>=0.1.0

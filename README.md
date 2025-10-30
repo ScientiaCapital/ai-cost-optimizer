@@ -1,203 +1,270 @@
 # AI Cost Optimizer
 
-**Stop overpaying for AI.** Automatically route prompts to the cheapest suitable model and save 40-70% on LLM costs.
+> Smart multi-LLM routing system that automatically selects the most cost-efficient model based on prompt complexity.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
+## What It Does
 
-> 🎓 **GTME Learning Project** - Built to scratch my own itch and learn by doing. Useful for real work, shared openly for others who face the same problem.
+Analyzes your prompts and routes them to the optimal LLM:
+- **Simple queries** (< 100 tokens, no complexity keywords) → **Gemini Flash** (free tier)
+- **Complex queries** (long prompts, technical keywords) → **Claude Haiku** (quality/cost balance)
+- **Fallback** → **OpenRouter** (aggregator for 40+ models)
 
-## The Problem
-
-AI costs are unpredictable. What starts as $50/month can spiral to $5,000 when experimenting. You're either:
-- Using GPT-4 for everything (expensive)
-- Using GPT-3.5 for everything (quality suffers)
-- Manually picking models (tedious)
-
-## The Solution
-
-**Smart routing:** Analyze complexity → Pick optimal model → Save money.
-
-- Simple task? Free model (Gemini Flash, Ollama)
-- Complex reasoning? Premium model (Claude Opus, GPT-4)
-- Everything in between? Cost-efficient options
-
-**Result:** Use GPT-4 when you need it, not by default.
-
-## Features
-
-- ⚡ **Smart Routing**: Automatic complexity analysis (0.0-1.0 score) → optimal model selection
-- 💰 **Cost Tracking**: Real-time cost calculation with per-request breakdowns
-- 🎯 **Budget Management**: Set limits, get alerts at 50%, 80%, 90% thresholds
-- 🔌 **Multi-Provider**: 40+ models across 8 providers (Anthropic, Google, Cerebras, DeepSeek, OpenRouter, HuggingFace, Ollama)
-- 🖥️ **Claude Desktop Integration**: Native MCP protocol support (5 tools)
-- 🐳 **Production Ready**: Docker, health checks, metrics, structured logging
-- 📊 **Transparent**: See exactly which model was chosen and why
-
-## Supported Providers
-- **OpenRouter** (40+ models)
-- **Anthropic** (Claude 3.5, Opus)
-- **Google** (Gemini 1.5, 2.0)
-- **Cerebras** (Llama 3.1)
-- **Deepseek** (Chat, Coder)
-- **Ollama** (Local/Free)
-- **HuggingFace** (Open models)
+Tracks all costs in SQLite database so you always know your spend.
 
 ## Quick Start
 
-### 1. Setup
+### 1. Get API Keys
+
+You need at least **one** of these:
+
+- **Google Gemini** (recommended - free tier): https://aistudio.google.com/app/apikey
+- **Anthropic Claude**: https://console.anthropic.com/
+- **OpenRouter** (all models): https://openrouter.ai/keys
+
+### 2. Setup
+
 ```bash
+# Clone or navigate to project
 cd ai-cost-optimizer
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+
+# Copy environment template
 cp .env.example .env
+
+# Edit .env and add your API key(s)
+nano .env
+
+# Install dependencies
+pip install -r requirements.txt
+pip install -r mcp/requirements.txt
 ```
 
-### 2. Configure Providers
-Edit `.env` and add API keys for providers you want to use:
+### 3. Start FastAPI Service
+
 ```bash
-OPENROUTER_API_KEY=sk-or-v1-...     # Start here (easiest)
-ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=...
-# Add others as needed
+# Run the service
+python app/main.py
+
+# You should see:
+# "AI Cost Optimizer initialized with providers: ['gemini']"
+# "Uvicorn running on http://0.0.0.0:8000"
 ```
 
-Get API keys:
-- OpenRouter: https://openrouter.ai/keys
-- Anthropic: https://console.anthropic.com
-- Google: https://aistudio.google.com/apikey
-- Others: See provider websites
+Keep this terminal running!
 
-### 3. Run
-```bash
-python main.py  # Starts at http://localhost:8000
+### 4. Configure Claude Desktop
+
+Edit your Claude Desktop config:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+Add the MCP server:
+
+```json
+{
+  "mcpServers": {
+    "ai-cost-optimizer": {
+      "command": "python3",
+      "args": [
+        "/Users/tmkipper/Desktop/tk_projects/ai-cost-optimizer/mcp/server.py"
+      ],
+      "env": {
+        "COST_OPTIMIZER_API_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
 ```
 
-### 4. Test
-```bash
-curl -X POST http://localhost:8000/v1/complete \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Explain AI in simple terms", "max_tokens": 200}'
+**Important**: Use the absolute path to `mcp/server.py` on your system!
+
+### 5. Restart Claude Desktop
+
+- Completely quit Claude Desktop (Cmd+Q on Mac)
+- Relaunch Claude Desktop
+
+### 6. Test It!
+
+In Claude Desktop:
+
 ```
+Please use the cost optimizer to answer: What is quantum computing?
+```
+
+You should see:
+- Response from Gemini Flash (simple query)
+- Cost breakdown: ~$0.000001
+- Total cost tracking
+
+Try a complex query:
+
+```
+Please use the cost optimizer to explain: Design a microservices architecture for a real-time analytics platform
+```
+
+Should route to Claude Haiku for better quality.
 
 ## How It Works
 
-**Automatic Routing**: Analyzes prompt complexity → Selects cheapest suitable model → Routes to provider
+### Complexity Scoring
 
-**Cost Tiers**:
-- Free: Ollama (local), Gemini 2.0
-- Cheap: Cerebras, Deepseek ($0.1-1/M tokens)
-- Medium: Claude Sonnet, Gemini Pro ($1-5/M)
-- Premium: Claude Opus ($15-75/M)
+```python
+# Simple: < 100 tokens + no keywords
+"What is AI?" → Gemini Flash ($0.075 per 1M tokens)
+
+# Complex: Long OR has keywords like explain, analyze, design
+"Explain the architecture..." → Claude Haiku ($0.25 per 1M tokens)
+```
+
+### Cost Tracking
+
+All requests logged to `optimizer.db`:
+
+```bash
+# View usage
+curl http://localhost:8000/stats
+
+# Check total cost
+curl http://localhost:8000/stats | jq '.overall.total_cost'
+```
+
+## Project Structure
+
+```
+ai-cost-optimizer/
+├── app/
+│   ├── main.py           # FastAPI service
+│   ├── complexity.py     # Token counter + keyword detector
+│   ├── router.py         # Model selection logic
+│   ├── providers.py      # API clients (Gemini, Claude, OpenRouter)
+│   └── database.py       # SQLite cost tracker
+├── mcp/
+│   ├── server.py         # MCP tool for Claude Desktop
+│   └── requirements.txt
+├── .env                  # Your API keys
+├── optimizer.db         # Cost database (auto-created)
+└── README.md
+```
 
 ## API Endpoints
 
+### Complete Prompt
+
 ```bash
-POST /v1/complete      # Main completion endpoint
-GET  /v1/models        # List all available models
-GET  /v1/providers     # List enabled providers
-GET  /v1/usage         # Get usage stats
-POST /v1/budget        # Set budget limits
+curl -X POST http://localhost:8000/complete \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What is AI?", "max_tokens": 1000}'
 ```
 
-## Force Specific Provider/Model
-```bash
-curl -X POST http://localhost:8000/v1/complete \
-  -d '{"prompt": "test", "provider": "anthropic", "model": "claude-3-5-sonnet-20241022"}'
+Response:
+```json
+{
+  "response": "AI is artificial intelligence...",
+  "provider": "gemini",
+  "model": "gemini-1.5-flash",
+  "complexity": "simple",
+  "tokens_in": 4,
+  "tokens_out": 50,
+  "cost": 0.000015,
+  "total_cost_today": 0.000015
+}
 ```
 
-## Cost Savings Example
-- Simple task via GPT-4: $0.030
-- Same task via router (Gemini Flash): $0.0003
-- **Savings: 99%**
+### Get Stats
 
-## Documentation
+```bash
+curl http://localhost:8000/stats
+```
 
-- **[CONTEXT.md](./CONTEXT.md)** - Project origin, goals, current state, roadmap
-- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Technical architecture and system design
-- **[.claude/CLAUDE.md](./.claude/CLAUDE.md)** - Instructions for AI assistants working on this project
-- **[skill-package/](./skill-package/)** - Claude Desktop marketplace package
+### Get Recommendation
 
-## About This Project
+```bash
+curl "http://localhost:8000/recommendation?prompt=What+is+AI"
+```
 
-This is a **GTME (Give This to ME) learning project** - built to solve a real problem I face daily while learning new skills:
+### List Providers
 
-**Learning Goals**:
-- FastAPI and async Python
-- LLM provider integration (8 different APIs!)
-- Cost optimization algorithms
-- Docker and cloud deployment (RunPod)
-- MCP protocol for Claude Desktop
-- Production monitoring and observability
+```bash
+curl http://localhost:8000/providers
+```
 
-**Personal Value**:
-- Save money on AI experimentation
-- Understand which models are actually needed
-- Data on spending patterns
-- No anxiety about costs
+## Configuration
 
-**For Others**:
-- Open source and MIT licensed
-- Real solution to a common problem
-- Simple, practical, no framework bloat
-- Works out of the box
+### Environment Variables
 
-## Roadmap
+```bash
+# Provider API keys
+GOOGLE_API_KEY=your-key-here
+ANTHROPIC_API_KEY=your-key-here
+OPENROUTER_API_KEY=your-key-here
 
-### v1.0 (Current - MVP)
-- ✅ Core routing logic
-- ✅ 8 provider integrations
-- ✅ Cost tracking (in-memory)
-- ✅ Budget management
-- ✅ Claude Desktop integration (MCP)
-- ✅ Docker + RunPod deployment
+# Optional
+DATABASE_PATH=optimizer.db  # Database location
+PORT=8000                   # Server port
+LOG_LEVEL=INFO              # Logging verbosity
+```
 
-### v1.1 (Next - 2 Weeks)
-- [ ] Database persistence (SQLite)
-- [ ] Budget alert notifications (email/webhook)
-- [ ] Streamlit dashboard
-- [ ] Usage analytics
+### Pricing
 
-### v1.2 (Later - 1-2 Months)
-- [ ] ML-based complexity prediction
-- [ ] Response quality scoring
-- [ ] A/B testing framework
-- [ ] More providers (Groq, Mistral, Cohere)
+**Gemini Flash** (simple queries):
+- Input: $0.075 per 1M tokens
+- Output: $0.30 per 1M tokens
+- Free tier available
 
-### v2.0 (Future - 3+ Months)
-- [ ] Team collaboration features
-- [ ] Shared budgets
-- [ ] Cost vs quality optimization
-- [ ] Advanced analytics
+**Claude Haiku** (complex queries):
+- Input: $0.25 per 1M tokens
+- Output: $1.25 per 1M tokens
 
-## Contributing
+**OpenRouter** (fallback):
+- Pricing varies by model
 
-This is a personal learning project, but PRs welcome for:
-- Bug fixes
-- New provider integrations
-- Improved complexity analysis
-- Documentation improvements
+## Troubleshooting
 
-Keep it simple - this is a tool first, not a framework.
+### Service won't start
+
+```bash
+# Check if port 8000 is in use
+lsof -i :8000
+
+# Check API keys are set
+cat .env
+```
+
+### MCP tool not appearing in Claude Desktop
+
+1. Verify absolute path in `claude_desktop_config.json`
+2. Check FastAPI service is running (`curl http://localhost:8000/health`)
+3. Restart Claude Desktop completely
+4. Check Claude Desktop logs
+
+### Wrong model selected
+
+Check complexity score:
+```bash
+curl "http://localhost:8000/recommendation?prompt=your+prompt+here"
+```
+
+## Development
+
+### Running Tests
+
+```bash
+# Test complexity scorer
+python -c "from app.complexity import score_complexity; print(score_complexity('What is AI?'))"
+
+# Test database
+python -c "from app.database import CostTracker; t = CostTracker(); print(t.get_total_cost())"
+```
+
+### Adding a Provider
+
+1. Add provider class in `app/providers.py`
+2. Add to `init_providers()` function
+3. Update routing logic in `app/router.py`
 
 ## License
 
-MIT License - Free for personal and commercial use
+MIT - do whatever you want with it!
 
-## Acknowledgments
+## Questions?
 
-Built with:
-- [FastAPI](https://fastapi.tiangolo.com) - Modern Python web framework
-- [MCP SDK](https://modelcontextprotocol.io) - Claude Desktop integration
-- Provider APIs: Anthropic, Google, Cerebras, DeepSeek, OpenRouter, HuggingFace, Ollama
-
-## Support
-
-- **Issues**: https://github.com/ScientiaCapital/ai-cost-optimizer/issues
-- **Discussions**: https://github.com/ScientiaCapital/ai-cost-optimizer/discussions
-
----
-
-**Built by a dev, for devs.** Stop overpaying for AI. Start optimizing. 🚀
+This is a learning project built with the "GTME" philosophy (Give This to ME). Feel free to fork, modify, and make it yours!
