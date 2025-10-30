@@ -20,7 +20,7 @@ AI Cost Optimizer is a multi-LLM routing system that automatically selects the m
 - **Database**: SQLite (development) / Persistent volume (production)
 - **Integration**: Model Context Protocol (MCP) for Claude Desktop
 - **Deployment**: Docker + RunPod
-- **Providers**: Anthropic, Google, Cerebras, DeepSeek, OpenRouter, HuggingFace, Ollama
+- **Providers**: Anthropic, Google, Cerebras, DeepSeek, OpenRouter, HuggingFace, Cartesia
 
 ## Project Structure
 
@@ -39,7 +39,7 @@ ai-cost-optimizer/
 │   ├── cerebras_provider.py
 │   ├── deepseek_provider.py
 │   ├── openrouter.py
-│   ├── ollama_provider.py
+│   ├── cartesia_provider.py
 │   └── huggingface_provider.py
 ├── mcp/                    # Claude Desktop integration
 │   ├── server.py          # MCP protocol implementation
@@ -58,7 +58,7 @@ ai-cost-optimizer/
 ### Complexity Scoring (0.0 - 1.0)
 
 The router analyzes prompts and assigns complexity scores:
-- **0.0-0.2 (Free)**: Simple facts, definitions → Gemini Flash, Ollama
+- **0.0-0.2 (Free)**: Simple facts, definitions → Gemini Flash
 - **0.2-0.4 (Cheap)**: Code snippets, summaries → Cerebras, DeepSeek, Haiku
 - **0.4-0.7 (Medium)**: Analysis, explanations → Gemini Pro, Sonnet
 - **0.7-1.0 (Premium)**: Architecture, research → Opus, GPT-4
@@ -182,8 +182,9 @@ docker build -t ai-cost-optimizer:latest .
 
 - FastAPI service with 6 endpoints
 - Smart routing based on complexity
-- 8 provider integrations (Anthropic, Google, Cerebras, DeepSeek, OpenRouter, HuggingFace, Ollama, Cartesia)
+- 7 provider integrations (Anthropic, Google, Cerebras, DeepSeek, OpenRouter, HuggingFace, Cartesia)
 - Cost tracking and budget management
+- Full SQLite persistence (cost tracking, response caching, quality feedback)
 - MCP server for Claude Desktop (5 tools)
 - Docker containerization
 - RunPod deployment configuration
@@ -192,10 +193,8 @@ docker build -t ai-cost-optimizer:latest .
 
 ### What's Stubbed 🚧
 
-- Database persistence (cost tracking uses in-memory)
 - Email/webhook alerts (budget alerts stubbed)
 - Advanced analytics and reporting
-- Response quality scoring
 
 ### What's Missing ❌
 
@@ -206,17 +205,15 @@ docker build -t ai-cost-optimizer:latest .
 
 ## Known Issues
 
-1. **Database**: Cost tracking doesn't persist to SQLite yet
-2. **Budget alerts**: Thresholds calculated but no actual alerting
-3. **Ollama**: Requires local Ollama server running
-4. **OpenRouter**: Some models may have different pricing
-5. **Complexity**: Heuristic-based, not ML-powered (yet)
+1. **Budget alerts**: Thresholds calculated but no actual alerting
+2. **OpenRouter**: Some models may have different pricing
+3. **Complexity**: Heuristic-based, not ML-powered (yet)
 
 ## Future Plans
 
 **v1.1** (Next):
-- Persist cost tracking to database
-- Implement budget alert notifications
+- Implement budget alert notifications (email, webhook, logging)
+- Add interactive CLI testing tool
 - Add Streamlit dashboard
 
 **v1.2** (Later):
