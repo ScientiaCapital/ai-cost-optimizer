@@ -668,7 +668,7 @@ Need more historical queries to provide confident recommendations."""
 **Confidence:** {rec['confidence']}
 **Quality Score:** {rec.get('score', 'N/A')}
 
-**Reason:** {rec['reason']}
+**Reason:** {rec.get('reasoning', 'No reasoning available')}
 
 **Pattern Detected:** {pattern}
 **Complexity:** {complexity}"""
