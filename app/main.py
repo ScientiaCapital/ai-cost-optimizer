@@ -1,16 +1,16 @@
 """FastAPI service for AI Cost Optimizer."""
 import os
 import logging
+import sqlite3
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-from .complexity import score_complexity, get_complexity_metadata
 from .providers import init_providers
-from .router import Router, RoutingError
 from .database import CostTracker
+from app.services.routing_service import RoutingService
 
 # Load environment variables
 load_dotenv()
@@ -47,8 +47,10 @@ app.add_middleware(
 
 # Initialize global components
 providers = init_providers()
-router = Router(providers)
-cost_tracker = CostTracker(db_path=os.getenv("DATABASE_PATH", "optimizer.db"))
+routing_service = RoutingService(
+    db_path=os.getenv("DATABASE_PATH", "optimizer.db"),
+    providers=providers
+)
 
 logger.info(f"AI Cost Optimizer initialized with providers: {list(providers.keys())}")
 
@@ -58,6 +60,7 @@ class CompleteRequest(BaseModel):
     """Request model for completion endpoint."""
     prompt: str = Field(..., min_length=1, description="User prompt")
     max_tokens: Optional[int] = Field(1000, ge=1, le=4000, description="Maximum response tokens")
+    auto_route: bool = Field(False, description="Enable intelligent routing (hybrid strategy)")
     tokenizer_id: Optional[str] = Field(None, description="Optional HF repo id for tokenization metrics (e.g., 'UW/OLMo2-8B-SuperBPE-t180k')")
 
 
@@ -66,8 +69,11 @@ class CompleteResponse(BaseModel):
     response: str
     provider: str
     model: str
-    complexity: str
+    strategy_used: str  # NEW: "complexity", "learning", "hybrid", "cached"
+    confidence: str     # NEW: "high", "medium", "low"
+    complexity: str     # DEPRECATED but kept for compatibility
     complexity_metadata: dict
+    routing_metadata: dict  # NEW: Full RoutingDecision.metadata
     tokens_in: int
     tokens_out: int
     cost: float
@@ -112,8 +118,10 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "providers_available": list(providers.keys()),
-        "version": "1.0.0"
+        "providers_available": list(routing_service.providers.keys()),
+        "routing_engine": "v2",  # Phase 2 Auto-Routing with RoutingEngine
+        "auto_route_enabled": routing_service.engine.track_metrics,
+        "version": "2.0.0"  # Phase 2 FastAPI Integration
     }
 
 
@@ -124,14 +132,13 @@ async def complete_prompt(request: CompleteRequest):
 
     This is the main endpoint that:
     1. Checks response cache for instant results
-    2. Analyzes prompt complexity (if cache miss)
-    3. Routes to appropriate model (if cache miss)
-    4. Executes completion (if cache miss)
-    5. Stores response in cache (if cache miss)
-    6. Tracks cost in database
+    2. Routes using RoutingEngine (complexity or hybrid based on auto_route)
+    3. Executes completion with selected provider
+    4. Stores response in cache
+    5. Tracks cost and routing metrics
 
     Args:
-        request: CompleteRequest with prompt and optional max_tokens
+        request: CompleteRequest with prompt, max_tokens, and auto_route
 
     Returns:
         CompleteResponse with response text, metadata, and cost
@@ -140,120 +147,19 @@ async def complete_prompt(request: CompleteRequest):
         HTTPException: If routing or completion fails
     """
     try:
-        # ========== CACHE LOOKUP ==========
-        cached = cost_tracker.check_cache(request.prompt, request.max_tokens)
-
-        if cached:
-            # Cache hit! Return instant response with $0 cost
-            logger.info(f"Cache HIT: {cached['cache_key'][:16]}... (hit_count={cached['hit_count']})")
-
-            # Record cache hit
-            cost_tracker.record_cache_hit(cached["cache_key"])
-
-            # Log as a request with cost=$0
-            cost_tracker.log_request(
-                prompt=request.prompt,
-                complexity=cached["complexity"],
-                provider="cache",
-                model=cached["model"],
-                tokens_in=0,
-                tokens_out=0,
-                cost=0.0
-            )
-
-            total_cost = cost_tracker.get_total_cost()
-
-            # Optional tokenizer metrics (best-effort, no failure)
-            tokenizer_id = None
-            tokenizer_tokens_in = None
-            tokenizer_bytes_per_token = None
-            tokenizer_tokens_per_byte = None
-            try:
-                from .tokenizer_registry import estimate_tokenization_metrics
-                tokenizer_id = None  # cache hit path lacks requested tokenizer; skip
-            except Exception:
-                pass
-
-            return CompleteResponse(
-                response=cached["response"],
-                provider=cached["provider"],
-                model=cached["model"],
-                complexity=cached["complexity"],
-                complexity_metadata={"cached": True, "original_timestamp": cached["created_at"]},
-                tokens_in=cached["tokens_in"],
-                tokens_out=cached["tokens_out"],
-                cost=0.0,
-                total_cost_today=total_cost,
-                cache_hit=True,
-                original_cost=cached["cost"],
-                savings=cached["cost"],
-                cache_key=cached["cache_key"],
-                tokenizer_id=tokenizer_id,
-                tokenizer_tokens_in=tokenizer_tokens_in,
-                tokenizer_bytes_per_token=tokenizer_bytes_per_token,
-                tokenizer_tokens_per_byte=tokenizer_tokens_per_byte,
-            )
-
-        # ========== CACHE MISS - NORMAL FLOW ==========
-        logger.info("Cache MISS: routing to LLM provider")
-
-        # Analyze complexity
-        complexity = score_complexity(request.prompt)
-        complexity_metadata = get_complexity_metadata(request.prompt)
-
-        logger.info(
-            f"Processing request: complexity={complexity}, "
-            f"tokens={complexity_metadata['token_count']}"
-        )
-
-        # Route and execute
-        result = await router.route_and_complete(
+        result = await routing_service.route_and_complete(
             prompt=request.prompt,
-            complexity=complexity,
+            auto_route=request.auto_route,
             max_tokens=request.max_tokens
         )
-
-        # Store in cache for future use
-        cost_tracker.store_in_cache(
-            prompt=request.prompt,
-            max_tokens=request.max_tokens,
-            response=result["response"],
-            provider=result["provider"],
-            model=result["model"],
-            complexity=complexity,
-            tokens_in=result["tokens_in"],
-            tokens_out=result["tokens_out"],
-            cost=result["cost"]
-        )
-
-        # Log to database
-        cost_tracker.log_request(
-            prompt=request.prompt,
-            complexity=complexity,
-            provider=result["provider"],
-            model=result["model"],
-            tokens_in=result["tokens_in"],
-            tokens_out=result["tokens_out"],
-            cost=result["cost"]
-        )
-
-        # Get updated total cost
-        total_cost = cost_tracker.get_total_cost()
-
-        logger.info(
-            f"Completed: provider={result['provider']}, "
-            f"cost=${result['cost']:.6f}, total=${total_cost:.2f}, cached=True"
-        )
-
-        # Generate cache key for feedback
-        cache_key = cost_tracker._generate_cache_key(request.prompt, request.max_tokens)
 
         # Optional tokenizer metrics
         tokenizer_id = request.tokenizer_id
         tokenizer_tokens_in = None
         tokenizer_bytes_per_token = None
         tokenizer_tokens_per_byte = None
-        if tokenizer_id:
+
+        if tokenizer_id and not result["cache_hit"]:
             try:
                 from .tokenizer_registry import estimate_tokenization_metrics
                 est = estimate_tokenization_metrics(request.prompt, tokenizer_id)
@@ -266,25 +172,24 @@ async def complete_prompt(request: CompleteRequest):
             response=result["response"],
             provider=result["provider"],
             model=result["model"],
-            complexity=complexity,
-            complexity_metadata=complexity_metadata,
+            strategy_used=result["strategy_used"],
+            confidence=result["confidence"],
+            complexity=result.get("strategy_used", "unknown"),  # Deprecated field
+            complexity_metadata=result["complexity_metadata"],
+            routing_metadata=result["routing_metadata"],
             tokens_in=result["tokens_in"],
             tokens_out=result["tokens_out"],
             cost=result["cost"],
-            total_cost_today=total_cost,
-            cache_hit=False,
-            original_cost=None,
-            savings=0.0,
-            cache_key=cache_key,
+            total_cost_today=result["total_cost_today"],
+            cache_hit=result["cache_hit"],
+            original_cost=result.get("original_cost"),
+            savings=result.get("savings", 0.0),
+            cache_key=result.get("cache_key"),
             tokenizer_id=tokenizer_id,
             tokenizer_tokens_in=tokenizer_tokens_in,
             tokenizer_bytes_per_token=tokenizer_bytes_per_token,
             tokenizer_tokens_per_byte=tokenizer_tokens_per_byte,
         )
-
-    except RoutingError as e:
-        logger.error(f"Routing error: {str(e)}")
-        raise HTTPException(status_code=503, detail=str(e))
 
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
@@ -301,7 +206,7 @@ async def get_usage_stats():
         and recent request history
     """
     try:
-        stats = cost_tracker.get_usage_stats()
+        stats = routing_service.cost_tracker.get_usage_stats()
         return StatsResponse(**stats)
 
     except Exception as e:
@@ -344,26 +249,73 @@ async def get_recommendation(prompt: str):
     """
     Get routing recommendation without executing request.
 
+    Always uses auto_route=true (hybrid strategy) for recommendations.
     Useful for previewing which model would be selected.
 
     Args:
         prompt: User prompt (query parameter)
 
     Returns:
-        Routing information with provider, model, and reasoning
+        Routing information with provider, model, confidence, and reasoning
     """
     try:
-        complexity = score_complexity(prompt)
-        complexity_metadata = get_complexity_metadata(prompt)
-        routing_info = router.get_routing_info(complexity)
+        return routing_service.get_recommendation(prompt=prompt)
+
+    except Exception as e:
+        logger.error(f"Error getting recommendation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/routing/metrics")
+async def get_routing_metrics():
+    """
+    Get auto-routing analytics for monitoring and ROI tracking.
+
+    Returns strategy performance, decision counts, and confidence distribution
+    from the routing engine metrics collector.
+
+    Returns:
+        Dict with strategy_performance, total_decisions, confidence_distribution, provider_usage
+    """
+    try:
+        return routing_service.get_routing_metrics()
+
+    except Exception as e:
+        logger.error(f"Error fetching routing metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/routing/decision")
+async def get_routing_decision(prompt: str, auto_route: bool = True):
+    """
+    Get detailed routing explanation for debugging and transparency.
+
+    Returns complete RoutingDecision with all metadata for understanding
+    why a particular provider/model was selected.
+
+    Args:
+        prompt: Prompt to analyze (query parameter)
+        auto_route: Use intelligent routing (default: true)
+
+    Returns:
+        Dict with decision and full metadata
+    """
+    try:
+        recommendation = routing_service.get_recommendation(prompt=prompt)
 
         return {
-            "complexity": complexity,
-            "complexity_metadata": complexity_metadata,
-            **routing_info
+            "decision": {
+                "provider": recommendation["provider"],
+                "model": recommendation["model"],
+                "confidence": recommendation["confidence"],
+                "strategy_used": recommendation["strategy_used"],
+                "reasoning": recommendation["reasoning"]
+            },
+            "metadata": recommendation["metadata"]
         }
 
     except Exception as e:
+        logger.error(f"Error getting routing decision: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -381,7 +333,7 @@ async def get_cache_stats():
         - popular_queries: Most frequently cached queries
     """
     try:
-        stats = cost_tracker.get_cache_stats()
+        stats = routing_service.cost_tracker.get_cache_stats()
         return stats
 
     except Exception as e:
@@ -407,7 +359,7 @@ async def submit_feedback(request: FeedbackRequest, user_agent: Optional[str] = 
     """
     try:
         # Add feedback to database
-        cost_tracker.add_feedback(
+        routing_service.cost_tracker.add_feedback(
             cache_key=request.cache_key,
             rating=request.rating,
             comment=request.comment,
@@ -415,13 +367,12 @@ async def submit_feedback(request: FeedbackRequest, user_agent: Optional[str] = 
         )
 
         # Update quality score (may trigger invalidation)
-        quality_score = cost_tracker.update_quality_score(request.cache_key)
+        quality_score = routing_service.cost_tracker.update_quality_score(request.cache_key)
 
         # Check if entry was invalidated
-        conn = cost_tracker._CostTracker__get_connection() if hasattr(cost_tracker, '_CostTracker__get_connection') else None
+        conn = routing_service.cost_tracker._CostTracker__get_connection() if hasattr(routing_service.cost_tracker, '_CostTracker__get_connection') else None
         if not conn:
-            import sqlite3
-            conn = sqlite3.connect(cost_tracker.db_path)
+            conn = sqlite3.connect(routing_service.cost_tracker.db_path)
 
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -473,7 +424,7 @@ async def get_quality_stats():
     - invalidated_responses: Responses that were removed due to poor quality
     """
     try:
-        stats = cost_tracker.get_quality_stats()
+        stats = routing_service.cost_tracker.get_quality_stats()
         return stats
 
     except Exception as e:
@@ -483,38 +434,17 @@ async def get_quality_stats():
 
 @app.get("/insights")
 async def get_learning_insights():
+    """Get intelligent routing insights from learning module.
+
+    NOTE: This endpoint is being migrated to the new routing architecture.
+    Use /routing/metrics for current routing analytics.
     """
-    Get intelligent routing insights from learning module.
-
-    Returns:
-        Learning statistics including:
-        - overall: Total queries, cache hits, rated responses
-        - by_provider: Provider performance with quality and cost metrics
-        - by_complexity: Performance breakdown by complexity level
-        - learning_active: Whether intelligent routing has sufficient data
-    """
-    try:
-        if not router.enable_learning or not router.analyzer:
-            return {
-                "learning_active": False,
-                "message": "Intelligent routing not enabled. Need more historical data.",
-                "overall": {
-                    "unique_queries": 0,
-                    "total_requests": 0,
-                    "total_cache_hits": 0,
-                    "rated_responses": 0,
-                    "avg_quality": None
-                },
-                "by_provider": [],
-                "by_complexity": []
-            }
-
-        insights = router.analyzer.get_insights()
-        return insights
-
-    except Exception as e:
-        logger.error(f"Error fetching learning insights: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "learning_active": False,
+        "message": "This endpoint is deprecated. Please use /routing/metrics instead.",
+        "migration_note": "Learning insights are being integrated into the new routing engine.",
+        "alternative_endpoint": "/routing/metrics"
+    }
 
 
 # Run the application
