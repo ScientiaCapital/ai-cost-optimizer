@@ -130,14 +130,13 @@ async def complete_prompt(request: CompleteRequest):
 
     This is the main endpoint that:
     1. Checks response cache for instant results
-    2. Analyzes prompt complexity (if cache miss)
-    3. Routes to appropriate model (if cache miss)
-    4. Executes completion (if cache miss)
-    5. Stores response in cache (if cache miss)
-    6. Tracks cost in database
+    2. Routes using RoutingEngine (complexity or hybrid based on auto_route)
+    3. Executes completion with selected provider
+    4. Stores response in cache
+    5. Tracks cost and routing metrics
 
     Args:
-        request: CompleteRequest with prompt and optional max_tokens
+        request: CompleteRequest with prompt, max_tokens, and auto_route
 
     Returns:
         CompleteResponse with response text, metadata, and cost
@@ -146,120 +145,19 @@ async def complete_prompt(request: CompleteRequest):
         HTTPException: If routing or completion fails
     """
     try:
-        # ========== CACHE LOOKUP ==========
-        cached = cost_tracker.check_cache(request.prompt, request.max_tokens)
-
-        if cached:
-            # Cache hit! Return instant response with $0 cost
-            logger.info(f"Cache HIT: {cached['cache_key'][:16]}... (hit_count={cached['hit_count']})")
-
-            # Record cache hit
-            cost_tracker.record_cache_hit(cached["cache_key"])
-
-            # Log as a request with cost=$0
-            cost_tracker.log_request(
-                prompt=request.prompt,
-                complexity=cached["complexity"],
-                provider="cache",
-                model=cached["model"],
-                tokens_in=0,
-                tokens_out=0,
-                cost=0.0
-            )
-
-            total_cost = cost_tracker.get_total_cost()
-
-            # Optional tokenizer metrics (best-effort, no failure)
-            tokenizer_id = None
-            tokenizer_tokens_in = None
-            tokenizer_bytes_per_token = None
-            tokenizer_tokens_per_byte = None
-            try:
-                from .tokenizer_registry import estimate_tokenization_metrics
-                tokenizer_id = None  # cache hit path lacks requested tokenizer; skip
-            except Exception:
-                pass
-
-            return CompleteResponse(
-                response=cached["response"],
-                provider=cached["provider"],
-                model=cached["model"],
-                complexity=cached["complexity"],
-                complexity_metadata={"cached": True, "original_timestamp": cached["created_at"]},
-                tokens_in=cached["tokens_in"],
-                tokens_out=cached["tokens_out"],
-                cost=0.0,
-                total_cost_today=total_cost,
-                cache_hit=True,
-                original_cost=cached["cost"],
-                savings=cached["cost"],
-                cache_key=cached["cache_key"],
-                tokenizer_id=tokenizer_id,
-                tokenizer_tokens_in=tokenizer_tokens_in,
-                tokenizer_bytes_per_token=tokenizer_bytes_per_token,
-                tokenizer_tokens_per_byte=tokenizer_tokens_per_byte,
-            )
-
-        # ========== CACHE MISS - NORMAL FLOW ==========
-        logger.info("Cache MISS: routing to LLM provider")
-
-        # Analyze complexity
-        complexity = score_complexity(request.prompt)
-        complexity_metadata = get_complexity_metadata(request.prompt)
-
-        logger.info(
-            f"Processing request: complexity={complexity}, "
-            f"tokens={complexity_metadata['token_count']}"
-        )
-
-        # Route and execute
-        result = await router.route_and_complete(
+        result = await routing_service.route_and_complete(
             prompt=request.prompt,
-            complexity=complexity,
+            auto_route=request.auto_route,
             max_tokens=request.max_tokens
         )
-
-        # Store in cache for future use
-        cost_tracker.store_in_cache(
-            prompt=request.prompt,
-            max_tokens=request.max_tokens,
-            response=result["response"],
-            provider=result["provider"],
-            model=result["model"],
-            complexity=complexity,
-            tokens_in=result["tokens_in"],
-            tokens_out=result["tokens_out"],
-            cost=result["cost"]
-        )
-
-        # Log to database
-        cost_tracker.log_request(
-            prompt=request.prompt,
-            complexity=complexity,
-            provider=result["provider"],
-            model=result["model"],
-            tokens_in=result["tokens_in"],
-            tokens_out=result["tokens_out"],
-            cost=result["cost"]
-        )
-
-        # Get updated total cost
-        total_cost = cost_tracker.get_total_cost()
-
-        logger.info(
-            f"Completed: provider={result['provider']}, "
-            f"cost=${result['cost']:.6f}, total=${total_cost:.2f}, cached=True"
-        )
-
-        # Generate cache key for feedback
-        cache_key = cost_tracker._generate_cache_key(request.prompt, request.max_tokens)
 
         # Optional tokenizer metrics
         tokenizer_id = request.tokenizer_id
         tokenizer_tokens_in = None
         tokenizer_bytes_per_token = None
         tokenizer_tokens_per_byte = None
-        if tokenizer_id:
+
+        if tokenizer_id and not result["cache_hit"]:
             try:
                 from .tokenizer_registry import estimate_tokenization_metrics
                 est = estimate_tokenization_metrics(request.prompt, tokenizer_id)
@@ -272,25 +170,24 @@ async def complete_prompt(request: CompleteRequest):
             response=result["response"],
             provider=result["provider"],
             model=result["model"],
-            complexity=complexity,
-            complexity_metadata=complexity_metadata,
+            strategy_used=result["strategy_used"],
+            confidence=result["confidence"],
+            complexity=result.get("strategy_used", "unknown"),  # Deprecated field
+            complexity_metadata=result["complexity_metadata"],
+            routing_metadata=result["routing_metadata"],
             tokens_in=result["tokens_in"],
             tokens_out=result["tokens_out"],
             cost=result["cost"],
-            total_cost_today=total_cost,
-            cache_hit=False,
-            original_cost=None,
-            savings=0.0,
-            cache_key=cache_key,
+            total_cost_today=result["total_cost_today"],
+            cache_hit=result["cache_hit"],
+            original_cost=result.get("original_cost"),
+            savings=result.get("savings", 0.0),
+            cache_key=result.get("cache_key"),
             tokenizer_id=tokenizer_id,
             tokenizer_tokens_in=tokenizer_tokens_in,
             tokenizer_bytes_per_token=tokenizer_bytes_per_token,
             tokenizer_tokens_per_byte=tokenizer_tokens_per_byte,
         )
-
-    except RoutingError as e:
-        logger.error(f"Routing error: {str(e)}")
-        raise HTTPException(status_code=503, detail=str(e))
 
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
