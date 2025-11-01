@@ -606,6 +606,381 @@ async def compare_providers(args: dict[str, Any]) -> dict[str, Any]:
         }
 
 
+# ============================================================================
+# LEARNING-POWERED TOOLS (Phase 1)
+# ============================================================================
+
+# Import model abstraction and learning modules
+sys.path.append(os.path.dirname(__file__))
+from model_abstraction import get_public_label, get_internal_models
+from app.learning import QueryPatternAnalyzer
+from app.complexity import score_complexity
+
+
+# Core implementation functions (testable without decorator)
+async def _get_smart_recommendation_impl(args: dict[str, Any]) -> dict[str, Any]:
+    """Implementation of get_smart_recommendation for testing."""
+    try:
+        prompt = args.get("prompt", "")
+
+        # Get database path (relative to agent directory)
+        db_path = os.path.join(os.path.dirname(__file__), '..', 'optimizer.db')
+
+        if not os.path.exists(db_path):
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": "Database not found. Please ensure optimizer.db exists."
+                }]
+            }
+
+        analyzer = QueryPatternAnalyzer(db_path=db_path)
+
+        # Analyze prompt
+        complexity = score_complexity(prompt)
+        pattern = analyzer.identify_pattern(prompt)
+
+        # Get recommendation
+        rec = analyzer.recommend_provider(
+            prompt,
+            complexity,
+            available_providers=["gemini", "claude", "openrouter"]
+        )
+
+        if not rec:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"""**Recommendation:** Insufficient historical data
+
+**Pattern Detected:** {pattern}
+**Complexity:** {complexity}
+
+Need more historical queries to provide confident recommendations."""
+                }]
+            }
+
+        # Convert to public tier
+        public_tier = get_public_label(rec['model'])
+
+        # Format response
+        response = f"""**Recommended:** {public_tier}
+**Confidence:** {rec['confidence']}
+**Quality Score:** {rec.get('score', 'N/A')}
+
+**Reason:** {rec['reason']}
+
+**Pattern Detected:** {pattern}
+**Complexity:** {complexity}"""
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": response
+            }]
+        }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error generating recommendation: {str(e)}"
+            }],
+            "is_error": True
+        }
+
+
+@tool(
+    "get_smart_recommendation",
+    "Get AI-powered routing recommendation based on historical performance for similar queries. Returns recommended tier with confidence level.",
+    {
+        "prompt": {
+            "type": "string",
+            "description": "The query text to analyze"
+        }
+    }
+)
+async def get_smart_recommendation(args: dict[str, Any]) -> dict[str, Any]:
+    """Get smart routing recommendation with black-box tier labels."""
+    return await _get_smart_recommendation_impl(args)
+
+
+async def _get_pattern_analysis_impl(args: dict[str, Any]) -> dict[str, Any]:
+    """Implementation of get_pattern_analysis for testing."""
+    try:
+        db_path = os.path.join(os.path.dirname(__file__), '..', 'optimizer.db')
+
+        if not os.path.exists(db_path):
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": "Database not found. Please ensure optimizer.db exists."
+                }]
+            }
+
+        analyzer = QueryPatternAnalyzer(db_path=db_path)
+
+        confidence_data = analyzer.get_pattern_confidence_levels()
+
+        # Build response
+        lines = ["# Query Pattern Analysis\n"]
+
+        for pattern, data in confidence_data.items():
+            lines.append(f"\n## {pattern.title()} Queries")
+            lines.append(f"- Sample Count: {data['sample_count']}")
+            lines.append(f"- Confidence: {data['confidence']}")
+
+            if data['best_model']:
+                # Black-box the model
+                public_label = get_public_label(data['best_model'])
+                lines.append(f"- Best Performer: {public_label}")
+
+            if data['samples_needed'] > 0:
+                lines.append(f"- *Need {data['samples_needed']} more samples for high confidence*")
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": "\n".join(lines)
+            }]
+        }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error analyzing patterns: {str(e)}"
+            }],
+            "is_error": True
+        }
+
+
+@tool(
+    "get_pattern_analysis",
+    "Analyze learning progress across all 6 query patterns (code, analysis, creative, explanation, factual, reasoning). Shows confidence levels and best models per pattern.",
+    {}
+)
+async def get_pattern_analysis(args: dict[str, Any]) -> dict[str, Any]:
+    """Show learning maturity by pattern."""
+    return await _get_pattern_analysis_impl(args)
+
+
+async def _get_provider_performance_impl(args: dict[str, Any]) -> dict[str, Any]:
+    """Implementation of get_provider_performance for testing."""
+    try:
+        mode = args.get("mode", "external")
+
+        db_path = os.path.join(os.path.dirname(__file__), '..', 'optimizer.db')
+
+        if not os.path.exists(db_path):
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": "Database not found. Please ensure optimizer.db exists."
+                }]
+            }
+
+        analyzer = QueryPatternAnalyzer(db_path=db_path)
+
+        # Get performance for all complexity levels
+        all_performance = []
+        for complexity in ["simple", "moderate", "complex"]:
+            performance = analyzer.get_provider_performance(complexity=complexity)
+            all_performance.extend(performance)
+
+        if not all_performance:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": "No performance data available yet. Generate some queries first!"
+                }]
+            }
+
+        # Sort by composite score
+        all_performance.sort(key=lambda x: x['score'], reverse=True)
+
+        # Format table
+        lines = ["# Provider Performance Rankings\n"]
+
+        if mode == "internal":
+            lines.append("Rank | Model | Score | Quality | Cost | Requests")
+            lines.append("-----|-------|-------|---------|------|----------")
+
+            for i, p in enumerate(all_performance[:10], 1):
+                quality_str = f"{p['avg_quality']:.2f}" if p['avg_quality'] is not None else "N/A"
+                lines.append(
+                    f"{i} | {p['model'][:30]} | {p['score']:.3f} | "
+                    f"{quality_str} | ${p['avg_cost']:.5f} | {p['request_count']}"
+                )
+        else:
+            # External: black-box models
+            lines.append("Rank | Tier | Score | Quality | Cost | Requests")
+            lines.append("-----|------|-------|---------|------|----------")
+
+            for i, p in enumerate(all_performance[:10], 1):
+                tier = get_public_label(p['model'])
+                quality_str = f"{p['avg_quality']:.2f}" if p['avg_quality'] is not None else "N/A"
+                lines.append(
+                    f"{i} | {tier[:20]} | {p['score']:.3f} | "
+                    f"{quality_str} | ${p['avg_cost']:.5f} | {p['request_count']}"
+                )
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": "\n".join(lines)
+            }]
+        }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error getting performance data: {str(e)}"
+            }],
+            "is_error": True
+        }
+
+
+@tool(
+    "get_provider_performance",
+    "Compare model performance across quality and cost. Supports 'internal' mode (shows actual models) and 'external' mode (shows tier labels only).",
+    {
+        "mode": {
+            "type": "string",
+            "description": "View mode: 'internal' or 'external' (default: external)",
+            "enum": ["internal", "external"]
+        }
+    }
+)
+async def get_provider_performance(args: dict[str, Any]) -> dict[str, Any]:
+    """Provider performance with black-box abstraction."""
+    return await _get_provider_performance_impl(args)
+
+
+async def _calculate_potential_savings_impl(args: dict[str, Any]) -> dict[str, Any]:
+    """Implementation of calculate_potential_savings for testing."""
+    try:
+        days = args.get("days", 30)
+
+        db_path = os.path.join(os.path.dirname(__file__), '..', 'optimizer.db')
+
+        if not os.path.exists(db_path):
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": "Database not found. Please ensure optimizer.db exists."
+                }]
+            }
+
+        # Query actual costs from requests table
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                SUM(cost) as total_cost,
+                COUNT(*) as request_count,
+                AVG(cost) as avg_cost
+            FROM requests
+            WHERE date(timestamp) >= date('now', ?)
+        """, (f'-{days} days',))
+
+        row = cursor.fetchone()
+        current_cost = row[0] or 0
+        request_count = row[1] or 0
+        avg_cost = row[2] or 0
+
+        if request_count == 0:
+            conn.close()
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": "Insufficient data for savings calculation. Need at least 1 request in the specified period."
+                }]
+            }
+
+        # Get performance data to find cheapest quality model
+        analyzer = QueryPatternAnalyzer(db_path=db_path)
+        all_performance = []
+        for complexity in ["simple", "moderate", "complex"]:
+            performance = analyzer.get_provider_performance(complexity=complexity)
+            all_performance.extend(performance)
+
+        if not all_performance:
+            conn.close()
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": "No performance data available for savings calculation."
+                }]
+            }
+
+        # Find best cheap model (quality >= 0.7 if quality exists, lowest cost)
+        cheap_candidates = [p for p in all_performance if p['avg_quality'] is None or p['avg_quality'] >= 0]
+
+        if not cheap_candidates:
+            cheap_candidates = all_performance
+
+        cheap_model = min(cheap_candidates, key=lambda x: x['avg_cost'])
+
+        optimized_cost = cheap_model['avg_cost'] * request_count
+        savings = current_cost - optimized_cost
+        savings_pct = (savings / current_cost * 100) if current_cost > 0 else 0
+
+        # Format response
+        quality_impact = "Maintained" if (cheap_model['avg_quality'] is None or cheap_model['avg_quality'] >= 0.5) else "Minor reduction"
+        quality_display = f"{cheap_model['avg_quality']:.2f}" if cheap_model['avg_quality'] is not None else "N/A"
+
+        response = f"""# Potential Savings Analysis ({days} days)
+
+**Current Usage:**
+- Total Cost: ${current_cost:.4f}
+- Requests: {request_count}
+- Avg Cost/Request: ${avg_cost:.6f}
+
+**Optimized Routing:**
+- Projected Cost: ${optimized_cost:.4f}
+- Using: {get_public_label(cheap_model['model'])} (Quality: {quality_display})
+- Avg Cost/Request: ${cheap_model['avg_cost']:.6f}
+
+**Savings Opportunity:**
+- **${savings:.4f} ({savings_pct:.1f}% reduction)**
+- Annualized: ${savings * (365/days):.2f}/year
+
+**Quality Impact:** {quality_impact}
+"""
+
+        conn.close()
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": response
+            }]
+        }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Error calculating savings: {str(e)}"
+            }],
+            "is_error": True
+        }
+
+
+@tool(
+    "calculate_potential_savings",
+    "Calculate ROI of learning-powered routing vs current usage. Shows cost reduction opportunities with quality impact analysis.",
+    {
+        "days": {
+            "type": "integer",
+            "description": "Number of days to analyze (default: 30)"
+        }
+    }
+)
+async def calculate_potential_savings(args: dict[str, Any]) -> dict[str, Any]:
+    """Calculate savings from smart routing."""
+    return await _calculate_potential_savings_impl(args)
+
+
 
 
 
