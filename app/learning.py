@@ -264,6 +264,8 @@ class QueryPatternAnalyzer:
             "model": top["model"],
             "confidence": top["confidence"],
             "score": top["score"],
+            "avg_cost": top["avg_cost"],
+            "avg_quality": top["avg_quality"],
             "pattern": pattern,
             "reasoning": " | ".join(reasoning_parts),
             "alternatives": available_performances[1:3] if len(available_performances) > 1 else []

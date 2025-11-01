@@ -1,8 +1,12 @@
 """Routing strategies."""
+import logging
+import sqlite3
 from abc import ABC, abstractmethod
 from app.routing.models import RoutingDecision, RoutingContext
 from app.routing.complexity import score_complexity
 from app.learning import QueryPatternAnalyzer
+
+logger = logging.getLogger(__name__)
 
 
 class RoutingStrategy(ABC):
@@ -207,8 +211,9 @@ class LearningStrategy(RoutingStrategy):
                 complexity=complexity,
                 available_providers=context.available_providers
             )
-        except Exception:
+        except (sqlite3.Error, FileNotFoundError) as e:
             # Database error or missing table - will use fallback
+            logger.debug(f"Could not get recommendation from learning data: {e}")
             pass
 
         # Handle case when no training data is available or database error
@@ -245,7 +250,8 @@ class LearningStrategy(RoutingStrategy):
             fallback_used=False,
             metadata={
                 "pattern": pattern,
-                "quality_score": recommendation.get('score'),
+                "quality_score": recommendation.get('avg_quality'),
+                "composite_score": recommendation.get('score'),
                 "cost_estimate": recommendation.get('avg_cost'),
                 "complexity": complexity_score
             }
