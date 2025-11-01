@@ -17,7 +17,12 @@ from tools import (
     get_recommendations,
     query_recent_requests,
     check_cache_effectiveness,
-    compare_providers
+    compare_providers,
+    # New learning-powered tools
+    get_smart_recommendation,
+    get_pattern_analysis,
+    get_provider_performance,
+    calculate_potential_savings
 )
 
 
@@ -30,7 +35,7 @@ Your role is to help users understand and optimize their AI/LLM costs by:
 3. Providing actionable, data-driven recommendations
 4. Explaining complex cost data in clear, business-friendly language
 
-You have access to 6 powerful tools that query the AI Cost Optimizer database:
+You have access to 10 powerful tools that query the AI Cost Optimizer database:
 
 **Analysis Tools:**
 - get_usage_stats: Overall statistics (total costs, requests, breakdowns)
@@ -41,6 +46,12 @@ You have access to 6 powerful tools that query the AI Cost Optimizer database:
 - get_recommendations: Generate prioritized optimization opportunities
 - check_cache_effectiveness: Cache performance and savings analysis
 - compare_providers: Cost/quality comparison across providers
+
+**Learning Intelligence Tools (NEW):**
+- get_smart_recommendation: AI-powered routing recommendations with confidence levels
+- get_pattern_analysis: Learning progress across 6 query patterns (code, analysis, creative, etc.)
+- get_provider_performance: Model performance rankings with internal/external view modes
+- calculate_potential_savings: ROI calculator showing cost reduction opportunities
 
 **Your Communication Style:**
 - Be concise but thorough
@@ -84,7 +95,12 @@ cost_analyzer_server = create_sdk_mcp_server(
         get_recommendations,
         query_recent_requests,
         check_cache_effectiveness,
-        compare_providers
+        compare_providers,
+        # New learning-powered tools
+        get_smart_recommendation,
+        get_pattern_analysis,
+        get_provider_performance,
+        calculate_potential_savings
     ]
 )
 
@@ -100,7 +116,12 @@ agent_options = ClaudeAgentOptions(
         "get_recommendations",
         "query_recent_requests",
         "check_cache_effectiveness",
-        "compare_providers"
+        "compare_providers",
+        # New learning-powered tools
+        "get_smart_recommendation",
+        "get_pattern_analysis",
+        "get_provider_performance",
+        "calculate_potential_savings"
     ]
 )
 

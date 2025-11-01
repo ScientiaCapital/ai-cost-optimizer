@@ -349,3 +349,63 @@ class QueryPatternAnalyzer:
             "by_complexity": complexities,
             "learning_active": overall["rated_responses"] >= 5
         }
+
+    def get_pattern_confidence_levels(self) -> Dict[str, Dict]:
+        """Get confidence levels for each query pattern.
+
+        Returns:
+            Dict mapping pattern name to confidence info:
+            {
+                'code': {'sample_count': 23, 'confidence': 'high', 'best_model': '...'},
+                'explanation': {'sample_count': 8, 'confidence': 'medium', ...}
+            }
+        """
+        results = {}
+
+        for pattern in self.QUERY_PATTERNS.keys():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Build pattern filter using keywords
+            keywords = self.QUERY_PATTERNS[pattern][:5]  # Use first 5 keywords
+            like_conditions = " OR ".join(["prompt_normalized LIKE ?" for _ in keywords])
+            params = [f"%{kw}%" for kw in keywords]
+
+            query = f"""
+                SELECT
+                    COUNT(*) as count,
+                    model,
+                    AVG(quality_score) as quality
+                FROM response_cache
+                WHERE ({like_conditions})
+                    AND model IS NOT NULL
+                    AND model != ''
+                GROUP BY model
+                ORDER BY quality DESC, count DESC
+                LIMIT 1
+            """
+
+            cursor.execute(query, params)
+
+            row = cursor.fetchone()
+            count = row["count"] if row else 0
+            best_model = row["model"] if row and count > 0 else None
+
+            conn.close()
+
+            # Confidence thresholds
+            if count >= 20:
+                confidence = "high"
+            elif count >= 10:
+                confidence = "medium"
+            else:
+                confidence = "low"
+
+            results[pattern] = {
+                'sample_count': count,
+                'confidence': confidence,
+                'best_model': best_model,
+                'samples_needed': max(0, 20 - count)
+            }
+
+        return results

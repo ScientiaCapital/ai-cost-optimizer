@@ -11,6 +11,14 @@ Analyzes your prompts and routes them to the optimal LLM:
 
 Tracks all costs in SQLite database so you always know your spend.
 
+### Key Features
+
+- **Learning Intelligence (Phase 1)**: Smart routing recommendations based on historical performance data
+- **Model Abstraction**: Black-box tier labels protect competitive intelligence while delivering customer value
+- **CLI Dashboards**: Visual learning progress and savings projections (customer-safe and admin versions)
+- **Agent-Powered Analysis**: Natural language cost optimization queries via Claude Agent SDK
+- **Real-Time Cost Tracking**: SQLite database tracks every request, cost, and performance metric
+
 ## Quick Start
 
 ### 1. Get API Keys
@@ -208,6 +216,53 @@ LOG_LEVEL=INFO              # Logging verbosity
 
 - Next.js Cerebras endpoint: `next-app/app/api/cerebras/chat/route.ts` (set `CEREBRAS_API_KEY`).
 - CePO experiment: see `experiments/README.md` and run `experiments/cepo_experiment.py`.
+
+## Security: Customer vs Admin Dashboards
+
+The system implements a **two-tier architecture** for competitive protection:
+
+### Customer-Safe Distribution
+
+**ALWAYS distribute:** `agent/customer_dashboard.py`
+- Shows ONLY tier labels (Economy Tier, Premium Tier, etc.)
+- NEVER exposes actual model names or providers
+- Safe for external users, customers, public demos
+
+### Internal Use Only
+
+**NEVER distribute:** `agent/admin_dashboard.py`
+- Shows actual model names (e.g., "openrouter/deepseek-coder", "claude/claude-3-haiku")
+- Exposes internal routing logic and model selection strategy
+- Contains competitive intelligence
+- For development, debugging, and internal analysis ONLY
+
+### Why This Matters
+
+**Competitive Protection:**
+- Your model selection strategy is valuable intellectual property
+- Hard-won knowledge about which models work best for each task type
+- Cost optimization approach is a competitive advantage
+
+**Customer Value:**
+- Customers still get full optimization benefits
+- Recommendations show tier performance and savings
+- Transparent about quality and cost without exposing strategy
+
+### File Security Matrix
+
+| File | Distribution | Shows Models? | Purpose |
+|------|--------------|---------------|---------|
+| `customer_dashboard.py` | ✅ External OK | ❌ No - Tiers only | Customer dashboards, demos |
+| `admin_dashboard.py` | ⛔ Internal ONLY | ✅ Yes - Full details | Dev, debugging, analysis |
+| `model_abstraction.py` | ⛔ Internal ONLY | ✅ Contains mapping | Core abstraction logic |
+| Agent tools (mode="external") | ✅ External OK | ❌ No - Tiers only | Customer-facing recommendations |
+| Agent tools (mode="internal") | ⛔ Internal ONLY | ✅ Yes - Full details | Admin analysis |
+
+**Before sharing ANY code or dashboard:**
+1. Check if it contains actual model names
+2. Verify it only shows tier labels
+3. Confirm it's the customer_dashboard.py version
+4. Never share admin_dashboard.py or model_abstraction.py
 
 ### Pricing
 
