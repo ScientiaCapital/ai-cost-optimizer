@@ -283,6 +283,40 @@ async def get_routing_metrics():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/routing/decision")
+async def get_routing_decision(prompt: str, auto_route: bool = True):
+    """
+    Get detailed routing explanation for debugging and transparency.
+
+    Returns complete RoutingDecision with all metadata for understanding
+    why a particular provider/model was selected.
+
+    Args:
+        prompt: Prompt to analyze (query parameter)
+        auto_route: Use intelligent routing (default: true)
+
+    Returns:
+        Dict with decision and full metadata
+    """
+    try:
+        recommendation = routing_service.get_recommendation(prompt=prompt)
+
+        return {
+            "decision": {
+                "provider": recommendation["provider"],
+                "model": recommendation["model"],
+                "confidence": recommendation["confidence"],
+                "strategy_used": recommendation["strategy_used"],
+                "reasoning": recommendation["reasoning"]
+            },
+            "metadata": recommendation["metadata"]
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting routing decision: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/cache/stats")
 async def get_cache_stats():
     """
