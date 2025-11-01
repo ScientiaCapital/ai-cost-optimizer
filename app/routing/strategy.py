@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 from app.routing.models import RoutingDecision, RoutingContext
 from app.routing.complexity import score_complexity
+from app.learning import QueryPatternAnalyzer
 
 
 class RoutingStrategy(ABC):
@@ -159,3 +160,97 @@ class ComplexityStrategy(RoutingStrategy):
     def get_name(self) -> str:
         """Return strategy name."""
         return "complexity"
+
+
+class LearningStrategy(RoutingStrategy):
+    """Pure learning-based routing using QueryPatternAnalyzer.
+
+    Routes based on learned patterns from historical performance data.
+    Confidence depends on sample count for detected pattern.
+    """
+
+    def __init__(self, db_path: str = "optimizer.db"):
+        """Initialize with database path.
+
+        Args:
+            db_path: Path to SQLite database with training data
+        """
+        self.analyzer = QueryPatternAnalyzer(db_path=db_path)
+
+    def route(self, prompt: str, context: RoutingContext) -> RoutingDecision:
+        """Route based purely on learned patterns.
+
+        Args:
+            prompt: User's query text
+            context: Routing context with available providers
+
+        Returns:
+            RoutingDecision based on historical performance
+        """
+        # Identify pattern and get recommendation
+        pattern = self.analyzer.identify_pattern(prompt)
+        complexity_score = score_complexity(prompt)
+
+        # Convert float complexity score to string category
+        if complexity_score < 0.3:
+            complexity = "simple"
+        elif complexity_score < 0.7:
+            complexity = "moderate"
+        else:
+            complexity = "complex"
+
+        # Try to get recommendation from historical data
+        recommendation = None
+        try:
+            recommendation = self.analyzer.recommend_provider(
+                prompt=prompt,
+                complexity=complexity,
+                available_providers=context.available_providers
+            )
+        except Exception:
+            # Database error or missing table - will use fallback
+            pass
+
+        # Handle case when no training data is available or database error
+        if recommendation is None:
+            # Fallback: use a sensible default based on complexity
+            if complexity == "simple":
+                provider, model = "gemini", "gemini-1.5-flash"
+            elif complexity == "moderate":
+                provider, model = "claude", "claude-3-haiku-20240307"
+            else:
+                provider, model = "claude", "claude-3-5-sonnet-20241022"
+
+            return RoutingDecision(
+                provider=provider,
+                model=model,
+                confidence="low",
+                strategy_used="learning",
+                reasoning="No training data available, using default",
+                fallback_used=True,
+                metadata={
+                    "pattern": pattern,
+                    "quality_score": None,
+                    "cost_estimate": None,
+                    "complexity": complexity_score
+                }
+            )
+
+        return RoutingDecision(
+            provider=recommendation['provider'],
+            model=recommendation['model'],
+            confidence=recommendation['confidence'],
+            strategy_used="learning",
+            reasoning=recommendation.get('reasoning', 'Based on learned patterns'),
+            fallback_used=False,
+            metadata={
+                "pattern": pattern,
+                "quality_score": recommendation.get('score'),
+                "cost_estimate": recommendation.get('avg_cost'),
+                "complexity": complexity_score
+            }
+        )
+
+    def get_name(self) -> str:
+        """Return strategy name."""
+        return "learning"
