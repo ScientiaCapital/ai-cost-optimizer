@@ -124,3 +124,40 @@ def test_get_recommendation(providers, tmp_path):
         assert result["confidence"] == "high"
         assert result["reasoning"] == "Complex technical topic"
         assert result["metadata"] == {"complexity_score": 0.8}
+
+
+def test_get_routing_metrics(providers, tmp_path):
+    """Test get_routing_metrics returns comprehensive metrics."""
+    db_path = str(tmp_path / "test.db")
+    service = RoutingService(db_path=db_path, providers=providers)
+
+    # Mock the metrics collector's get_metrics method
+    mock_metrics = {
+        "strategy_performance": {
+            "complexity": {"decisions": 10, "avg_cost": 0.0012},
+            "learning": {"decisions": 5, "avg_cost": 0.0008},
+            "hybrid": {"decisions": 15, "avg_cost": 0.0010}
+        },
+        "total_decisions": 30,
+        "confidence_distribution": {
+            "high": 20,
+            "medium": 8,
+            "low": 2
+        },
+        "provider_usage": {
+            "gemini": 12,
+            "claude": 10,
+            "openrouter": 8
+        }
+    }
+
+    with patch.object(service.engine.metrics, 'get_metrics', return_value=mock_metrics, create=True):
+        result = service.get_routing_metrics()
+
+        # Verify complete structure
+        assert result == mock_metrics
+        assert "strategy_performance" in result
+        assert "total_decisions" in result
+        assert result["total_decisions"] == 30
+        assert "confidence_distribution" in result
+        assert result["confidence_distribution"]["high"] == 20

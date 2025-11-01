@@ -178,3 +178,11 @@ class RoutingService:
             "reasoning": decision.reasoning,
             "metadata": decision.metadata
         }
+
+    def get_routing_metrics(self) -> Dict[str, Any]:
+        """Get routing performance metrics.
+
+        Returns:
+            Dict with strategy performance, decision counts, confidence distribution
+        """
+        return self.engine.metrics.get_metrics()
