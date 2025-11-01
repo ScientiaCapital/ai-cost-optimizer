@@ -2,8 +2,9 @@
 """CLI Dashboard for Learning Intelligence Visualization.
 
 Usage:
+    python dashboard.py                   # Interactive mode (recommended)
     python dashboard.py --mode internal   # Show actual models
-    python dashboard.py --mode external   # Show tier labels (default)
+    python dashboard.py --mode external   # Show tier labels
 """
 import argparse
 import sys
@@ -320,16 +321,63 @@ def render_learning_progress(analyzer: QueryPatternAnalyzer) -> str:
     return "\n".join(lines)
 
 
+def get_interactive_mode() -> str:
+    """Display interactive menu and get user's mode choice.
+
+    Returns:
+        str: 'internal' or 'external'
+    """
+    print("\n")
+    print("╔══════════════════════════════════════════╗")
+    print("║  Learning Intelligence Dashboard         ║")
+    print("╚══════════════════════════════════════════╝")
+    print()
+    print("Select your view:")
+    print()
+    print("  1. Customer View (Recommended)")
+    print("     → Shows performance tiers")
+    print("     → Hides technical details")
+    print()
+    print("  2. Admin View (Internal Use)")
+    print("     → Shows actual model names")
+    print("     → Full technical details")
+    print()
+
+    while True:
+        try:
+            choice = input("Enter choice (1-2) [1]: ").strip()
+
+            # Default to 1 if empty
+            if choice == "":
+                choice = "1"
+
+            if choice == "1":
+                return "external"
+            elif choice == "2":
+                return "internal"
+            else:
+                print("\n❌ Invalid choice. Please enter 1 or 2.\n")
+        except (KeyboardInterrupt, EOFError):
+            print("\n\n❌ Cancelled by user.")
+            sys.exit(0)
+
+
 def main():
     """Main dashboard entry point."""
     parser = argparse.ArgumentParser(description="Learning Intelligence Dashboard")
     parser.add_argument(
         "--mode",
         choices=["internal", "external"],
-        default="external",
+        default=None,
         help="View mode: internal (show models) or external (show tiers)"
     )
     args = parser.parse_args()
+
+    # If no mode specified, use interactive menu
+    if args.mode is None:
+        mode = get_interactive_mode()
+    else:
+        mode = args.mode
 
     # Initialize analyzer
     db_path = os.path.join(os.path.dirname(__file__), '..', 'optimizer.db')
@@ -342,7 +390,7 @@ def main():
     analyzer = QueryPatternAnalyzer(db_path=db_path)
 
     # Render dashboard
-    mode_label = "INTERNAL ADMIN VIEW" if args.mode == "internal" else "EXTERNAL CUSTOMER VIEW"
+    mode_label = "INTERNAL ADMIN VIEW" if mode == "internal" else "EXTERNAL CUSTOMER VIEW"
 
     print("\n")
     print("═" * 66)
@@ -351,7 +399,7 @@ def main():
 
     print(render_training_overview(analyzer))
     print(render_pattern_distribution(analyzer))
-    print(render_top_models(analyzer, mode=args.mode))
+    print(render_top_models(analyzer, mode=mode))
     print(render_savings_projection(analyzer))
     print(render_learning_progress(analyzer))
 

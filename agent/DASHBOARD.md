@@ -4,6 +4,39 @@ Visual CLI dashboard showing learning progress and model performance.
 
 ## Usage
 
+### Interactive Mode (Recommended)
+
+```bash
+# Run without arguments for user-friendly menu
+python3 dashboard.py
+```
+
+This will display an interactive menu:
+```
+╔══════════════════════════════════════════╗
+║  Learning Intelligence Dashboard         ║
+╚══════════════════════════════════════════╝
+
+Select your view:
+
+  1. Customer View (Recommended)
+     → Shows performance tiers
+     → Hides technical details
+
+  2. Admin View (Internal Use)
+     → Shows actual model names
+     → Full technical details
+
+Enter choice (1-2) [1]: _
+```
+
+- Press Enter or type `1` for Customer View (default)
+- Type `2` for Admin View
+- Invalid inputs will prompt again
+- Ctrl+C to cancel
+
+### Command-Line Flags (Scriptable)
+
 ```bash
 # External view (black-boxed tiers)
 python3 dashboard.py --mode external
@@ -11,6 +44,8 @@ python3 dashboard.py --mode external
 # Internal view (actual models)
 python3 dashboard.py --mode internal
 ```
+
+Use flags when running in scripts or automation where interactive prompts are not desired.
 
 ## Sections
 
