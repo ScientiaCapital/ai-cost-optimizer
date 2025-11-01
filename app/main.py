@@ -118,8 +118,10 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "providers_available": list(providers.keys()),
-        "version": "1.0.0"
+        "providers_available": list(routing_service.providers.keys()),
+        "routing_engine": "v2",  # Phase 2 Auto-Routing with RoutingEngine
+        "auto_route_enabled": routing_service.engine.track_metrics,
+        "version": "2.0.0"  # Phase 2 FastAPI Integration
     }
 
 
