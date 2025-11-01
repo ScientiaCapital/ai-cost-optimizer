@@ -156,3 +156,25 @@ class RoutingService:
             "cache_key": cache_key,
             "routing_metadata": decision.metadata
         }
+
+    def get_recommendation(self, prompt: str) -> Dict[str, Any]:
+        """Get routing recommendation without execution.
+
+        Args:
+            prompt: User prompt to analyze
+
+        Returns:
+            Dict with provider, model, strategy, confidence, metadata
+        """
+        # Get routing decision using hybrid strategy
+        context = RoutingContext(prompt=prompt)
+        decision = self.engine.route(prompt=prompt, auto_route=True, context=context)
+
+        return {
+            "provider": decision.provider,
+            "model": decision.model,
+            "strategy_used": decision.strategy_used,
+            "confidence": decision.confidence,
+            "reasoning": decision.reasoning,
+            "metadata": decision.metadata
+        }

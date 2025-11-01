@@ -89,3 +89,38 @@ async def test_route_and_complete_cache_miss(providers, tmp_path):
     assert result["tokens_in"] == 20
     assert result["tokens_out"] == 100
     assert mock_provider.send_message.called
+
+
+def test_get_recommendation(providers, tmp_path):
+    """Test get_recommendation returns routing decision without execution."""
+    db_path = str(tmp_path / "test.db")
+    service = RoutingService(db_path=db_path, providers=providers)
+
+    prompt = "Explain quantum computing"
+
+    with patch.object(service.engine, 'route') as mock_route:
+        # Mock the routing decision
+        mock_decision = Mock()
+        mock_decision.provider = "claude"
+        mock_decision.model = "claude-3-haiku-20240307"
+        mock_decision.strategy_used = "hybrid"
+        mock_decision.confidence = "high"
+        mock_decision.reasoning = "Complex technical topic"
+        mock_decision.metadata = {"complexity_score": 0.8}
+        mock_route.return_value = mock_decision
+
+        result = service.get_recommendation(prompt)
+
+        # Verify method was called with auto_route=True
+        mock_route.assert_called_once()
+        call_args = mock_route.call_args
+        assert call_args.kwargs['auto_route'] is True
+        assert call_args.kwargs['prompt'] == prompt
+
+        # Verify result structure
+        assert result["provider"] == "claude"
+        assert result["model"] == "claude-3-haiku-20240307"
+        assert result["strategy_used"] == "hybrid"
+        assert result["confidence"] == "high"
+        assert result["reasoning"] == "Complex technical topic"
+        assert result["metadata"] == {"complexity_score": 0.8}
