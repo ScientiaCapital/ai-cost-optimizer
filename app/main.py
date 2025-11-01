@@ -7,10 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-from .complexity import score_complexity, get_complexity_metadata
 from .providers import init_providers
-from .router import Router, RoutingError
 from .database import CostTracker
+from app.services.routing_service import RoutingService
+from .router import RoutingError  # Keep for exception handling
 
 # Load environment variables
 load_dotenv()
@@ -47,8 +47,10 @@ app.add_middleware(
 
 # Initialize global components
 providers = init_providers()
-router = Router(providers)
-cost_tracker = CostTracker(db_path=os.getenv("DATABASE_PATH", "optimizer.db"))
+routing_service = RoutingService(
+    db_path=os.getenv("DATABASE_PATH", "optimizer.db"),
+    providers=providers
+)
 
 logger.info(f"AI Cost Optimizer initialized with providers: {list(providers.keys())}")
 
@@ -58,6 +60,7 @@ class CompleteRequest(BaseModel):
     """Request model for completion endpoint."""
     prompt: str = Field(..., min_length=1, description="User prompt")
     max_tokens: Optional[int] = Field(1000, ge=1, le=4000, description="Maximum response tokens")
+    auto_route: bool = Field(False, description="Enable intelligent routing (hybrid strategy)")
     tokenizer_id: Optional[str] = Field(None, description="Optional HF repo id for tokenization metrics (e.g., 'UW/OLMo2-8B-SuperBPE-t180k')")
 
 
@@ -66,8 +69,11 @@ class CompleteResponse(BaseModel):
     response: str
     provider: str
     model: str
-    complexity: str
+    strategy_used: str  # NEW: "complexity", "learning", "hybrid", "cached"
+    confidence: str     # NEW: "high", "medium", "low"
+    complexity: str     # DEPRECATED but kept for compatibility
     complexity_metadata: dict
+    routing_metadata: dict  # NEW: Full RoutingDecision.metadata
     tokens_in: int
     tokens_out: int
     cost: float
