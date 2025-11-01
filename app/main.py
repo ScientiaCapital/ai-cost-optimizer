@@ -247,26 +247,20 @@ async def get_recommendation(prompt: str):
     """
     Get routing recommendation without executing request.
 
+    Always uses auto_route=true (hybrid strategy) for recommendations.
     Useful for previewing which model would be selected.
 
     Args:
         prompt: User prompt (query parameter)
 
     Returns:
-        Routing information with provider, model, and reasoning
+        Routing information with provider, model, confidence, and reasoning
     """
     try:
-        complexity = score_complexity(prompt)
-        complexity_metadata = get_complexity_metadata(prompt)
-        routing_info = router.get_routing_info(complexity)
-
-        return {
-            "complexity": complexity,
-            "complexity_metadata": complexity_metadata,
-            **routing_info
-        }
+        return routing_service.get_recommendation(prompt=prompt)
 
     except Exception as e:
+        logger.error(f"Error getting recommendation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
