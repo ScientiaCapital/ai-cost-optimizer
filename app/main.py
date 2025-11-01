@@ -1,6 +1,7 @@
 """FastAPI service for AI Cost Optimizer."""
 import os
 import logging
+import sqlite3
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -204,7 +205,7 @@ async def get_usage_stats():
         and recent request history
     """
     try:
-        stats = cost_tracker.get_usage_stats()
+        stats = routing_service.cost_tracker.get_usage_stats()
         return StatsResponse(**stats)
 
     except Exception as e:
@@ -331,7 +332,7 @@ async def get_cache_stats():
         - popular_queries: Most frequently cached queries
     """
     try:
-        stats = cost_tracker.get_cache_stats()
+        stats = routing_service.cost_tracker.get_cache_stats()
         return stats
 
     except Exception as e:
@@ -357,7 +358,7 @@ async def submit_feedback(request: FeedbackRequest, user_agent: Optional[str] = 
     """
     try:
         # Add feedback to database
-        cost_tracker.add_feedback(
+        routing_service.cost_tracker.add_feedback(
             cache_key=request.cache_key,
             rating=request.rating,
             comment=request.comment,
@@ -365,13 +366,12 @@ async def submit_feedback(request: FeedbackRequest, user_agent: Optional[str] = 
         )
 
         # Update quality score (may trigger invalidation)
-        quality_score = cost_tracker.update_quality_score(request.cache_key)
+        quality_score = routing_service.cost_tracker.update_quality_score(request.cache_key)
 
         # Check if entry was invalidated
-        conn = cost_tracker._CostTracker__get_connection() if hasattr(cost_tracker, '_CostTracker__get_connection') else None
+        conn = routing_service.cost_tracker._CostTracker__get_connection() if hasattr(routing_service.cost_tracker, '_CostTracker__get_connection') else None
         if not conn:
-            import sqlite3
-            conn = sqlite3.connect(cost_tracker.db_path)
+            conn = sqlite3.connect(routing_service.cost_tracker.db_path)
 
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -423,7 +423,7 @@ async def get_quality_stats():
     - invalidated_responses: Responses that were removed due to poor quality
     """
     try:
-        stats = cost_tracker.get_quality_stats()
+        stats = routing_service.cost_tracker.get_quality_stats()
         return stats
 
     except Exception as e:
@@ -433,38 +433,17 @@ async def get_quality_stats():
 
 @app.get("/insights")
 async def get_learning_insights():
+    """Get intelligent routing insights from learning module.
+
+    NOTE: This endpoint is being migrated to the new routing architecture.
+    Use /routing/metrics for current routing analytics.
     """
-    Get intelligent routing insights from learning module.
-
-    Returns:
-        Learning statistics including:
-        - overall: Total queries, cache hits, rated responses
-        - by_provider: Provider performance with quality and cost metrics
-        - by_complexity: Performance breakdown by complexity level
-        - learning_active: Whether intelligent routing has sufficient data
-    """
-    try:
-        if not router.enable_learning or not router.analyzer:
-            return {
-                "learning_active": False,
-                "message": "Intelligent routing not enabled. Need more historical data.",
-                "overall": {
-                    "unique_queries": 0,
-                    "total_requests": 0,
-                    "total_cache_hits": 0,
-                    "rated_responses": 0,
-                    "avg_quality": None
-                },
-                "by_provider": [],
-                "by_complexity": []
-            }
-
-        insights = router.analyzer.get_insights()
-        return insights
-
-    except Exception as e:
-        logger.error(f"Error fetching learning insights: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "learning_active": False,
+        "message": "This endpoint is deprecated. Please use /routing/metrics instead.",
+        "migration_note": "Learning insights are being integrated into the new routing engine.",
+        "alternative_endpoint": "/routing/metrics"
+    }
 
 
 # Run the application
