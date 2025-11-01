@@ -1,4 +1,5 @@
 """Service layer for intelligent routing."""
+import hashlib
 import logging
 from typing import Dict, Any
 
@@ -133,7 +134,10 @@ class RoutingService:
         )
 
         total_cost = self.cost_tracker.get_total_cost()
-        cache_key = self.cost_tracker._generate_cache_key(prompt, max_tokens)
+
+        # Generate cache key directly (avoid private method access)
+        normalized = " ".join(prompt.split())
+        cache_key = hashlib.sha256(f"{normalized}|{max_tokens}".encode()).hexdigest()
 
         return {
             "response": response_text,

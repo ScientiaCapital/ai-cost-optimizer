@@ -55,3 +55,37 @@ def test_route_and_complete_cache_hit(providers, tmp_path):
         assert result["cache_hit"] is True
         assert result["cost"] == 0.0  # Cache hits are free
         assert result["original_cost"] == 0.001
+
+
+@pytest.mark.asyncio
+async def test_route_and_complete_cache_miss(providers, tmp_path):
+    """Test route_and_complete with cache miss (full routing)."""
+    db_path = str(tmp_path / "test.db")
+
+    # Create mock provider with async send_message
+    mock_provider = Mock()
+    mock_provider.send_message = AsyncMock(return_value={
+        "response": "Provider response text",
+        "tokens_in": 20,
+        "tokens_out": 100,
+        "cost": 0.005
+    })
+
+    providers_dict = {"gemini": mock_provider}
+    service = RoutingService(db_path=db_path, providers=providers_dict)
+
+    # Mock cache miss (returns None)
+    with patch.object(service.cost_tracker, 'check_cache', return_value=None):
+        result = await service.route_and_complete(
+            prompt="What is Python?",
+            auto_route=False,  # Use complexity routing
+            max_tokens=1000
+        )
+
+    # Verify cache miss response
+    assert result["response"] == "Provider response text"
+    assert result["cache_hit"] is False
+    assert result["cost"] == 0.005
+    assert result["tokens_in"] == 20
+    assert result["tokens_out"] == 100
+    assert mock_provider.send_message.called
