@@ -264,6 +264,25 @@ async def get_recommendation(prompt: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/routing/metrics")
+async def get_routing_metrics():
+    """
+    Get auto-routing analytics for monitoring and ROI tracking.
+
+    Returns strategy performance, decision counts, and confidence distribution
+    from the routing engine metrics collector.
+
+    Returns:
+        Dict with strategy_performance, total_decisions, confidence_distribution, provider_usage
+    """
+    try:
+        return routing_service.get_routing_metrics()
+
+    except Exception as e:
+        logger.error(f"Error fetching routing metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/cache/stats")
 async def get_cache_stats():
     """
