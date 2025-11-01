@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 from .providers import init_providers
 from .database import CostTracker
 from app.services.routing_service import RoutingService
-from .router import RoutingError  # Keep for exception handling
 
 # Load environment variables
 load_dotenv()
