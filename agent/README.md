@@ -140,7 +140,10 @@ python cost_optimizer_agent.py "Compare provider costs"
 ```
 agent/
 ├── cost_optimizer_agent.py    # Main agent application
-├── tools.py                    # 6 custom analysis tools
+├── tools.py                    # 10 custom analysis tools (6 core + 4 learning)
+├── model_abstraction.py        # Black-box tier mapping for competitive protection
+├── customer_dashboard.py       # Customer-safe CLI dashboard (tier labels only)
+├── admin_dashboard.py          # Internal admin CLI dashboard (shows actual models)
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # This file
 └── .venv/                      # Virtual environment
@@ -148,7 +151,9 @@ agent/
 
 ### Custom Tools
 
-The agent has 6 specialized tools:
+The agent has 10 specialized tools:
+
+#### Core Analysis Tools (6)
 
 1. **`get_usage_stats()`** - Overall usage and cost statistics
 2. **`analyze_cost_patterns(days)`** - Spending trends over time
@@ -156,6 +161,13 @@ The agent has 6 specialized tools:
 4. **`query_recent_requests(limit)`** - Recent request analysis
 5. **`check_cache_effectiveness()`** - Cache performance metrics
 6. **`compare_providers()`** - Provider cost/quality comparison
+
+#### Learning Intelligence Tools (4) - Phase 1
+
+7. **`get_smart_recommendation(prompt)`** - AI-powered routing recommendations with confidence levels
+8. **`get_pattern_analysis()`** - Learning progress across 6 query patterns
+9. **`get_provider_performance(mode, complexity)`** - Model performance rankings (internal/external view)
+10. **`calculate_potential_savings(days, complexity)`** - ROI calculator for smart routing
 
 ### Agent Capabilities
 
@@ -225,6 +237,185 @@ cd agent
 source .venv/bin/activate
 ```
 
+## Learning Intelligence Tools (Phase 1)
+
+The agent now includes 4 powerful learning-powered tools that analyze historical performance data to provide smart routing recommendations with black-box abstraction for competitive protection.
+
+### 1. get_smart_recommendation
+
+Get AI-powered routing recommendations based on historical performance for similar queries.
+
+**Example Queries:**
+```
+"What's the best model for debugging Python code?"
+"Recommend a model for code review tasks"
+"Which tier should I use for API documentation?"
+```
+
+**Returns:**
+- Recommended tier (e.g., "Economy Tier", "Premium Tier")
+- Confidence level (high/medium/low based on sample size)
+- Quality score and estimated cost
+- Pattern detection (code, analysis, creative, etc.)
+- Reasoning based on historical data
+
+**Key Features:**
+- Uses black-box abstraction (shows tiers, not models)
+- Confidence levels based on sample count (high: 10+ samples, medium: 5-9, low: <5)
+- Analyzes 6 query patterns: code, analysis, creative, explanation, factual, reasoning
+
+### 2. get_pattern_analysis
+
+View learning progress and maturity across all 6 query patterns.
+
+**Example Queries:**
+```
+"Show me learning progress by pattern"
+"Which patterns have high confidence?"
+"How much training data do we have per pattern?"
+```
+
+**Returns:**
+- Sample count per pattern
+- Confidence level (high/medium/low)
+- Best performing tier for each pattern
+- Samples needed to reach high confidence
+
+**Use Cases:**
+- Identify which patterns need more training data
+- Understand learning system maturity
+- Track progress over time
+
+### 3. get_provider_performance
+
+Compare model performance across quality and cost metrics.
+
+**Example Queries:**
+```
+"Compare provider performance"
+"Show model rankings for code tasks"
+"What's the best tier for simple queries?"
+```
+
+**Parameters:**
+- `mode`: "internal" (shows actual models - admin only) or "external" (shows tier labels - default)
+- `complexity`: Filter by "simple" or "complex" queries
+
+**Returns:**
+- Performance rankings by composite score
+- Quality score (0-1 based on feedback)
+- Average cost per request
+- Request count (sample size)
+
+**Composite Score Formula:**
+```
+score = (quality * 0.5) + (cost_efficiency * 0.3) + (volume * 0.2)
+```
+
+### 4. calculate_potential_savings
+
+Calculate ROI of learning-powered routing vs current usage.
+
+**Example Queries:**
+```
+"How much could I save with smart routing?"
+"Calculate potential savings for last 30 days"
+"What's the ROI of optimization for code queries?"
+```
+
+**Parameters:**
+- `days`: Number of days to analyze (default: 30)
+- `complexity`: Filter by "simple" or "complex" queries
+
+**Returns:**
+- Current usage cost and request count
+- Optimized routing cost (using best cost-effective model)
+- Potential savings ($ and %)
+- Annualized savings projection
+- Quality impact assessment
+
+**Example Output:**
+```
+Current Monthly Cost:    $2.45
+Optimized Monthly Cost:  $0.87
+────────────────────────────────
+Potential Savings:       $1.58 (64.5% reduction)
+Annualized Savings:      $18.96/year
+
+Using: Economy Tier (Quality: 0.85)
+```
+
+## CLI Dashboards
+
+Two CLI dashboard versions provide visual learning intelligence:
+
+### Customer Dashboard (customer_dashboard.py)
+
+**SAFE FOR EXTERNAL DISTRIBUTION** - Shows only tier labels, never exposes actual model names.
+
+```bash
+python customer_dashboard.py
+```
+
+**Features:**
+- Training data overview (total queries, models, feedback)
+- Pattern distribution with progress bars
+- Top performing tiers (black-boxed)
+- 30-day savings projection
+- Learning progress by pattern
+
+**Security:**
+- ONLY shows tier labels (Economy, Premium, Standard, Specialty)
+- NO model names exposed
+- NO admin view option
+
+### Admin Dashboard (admin_dashboard.py)
+
+**INTERNAL USE ONLY - NEVER DISTRIBUTE TO CUSTOMERS** - Shows actual model names and internal routing logic.
+
+```bash
+# Internal view (shows actual models)
+python admin_dashboard.py --mode internal
+
+# External view (shows tiers - same as customer dashboard)
+python admin_dashboard.py --mode external
+```
+
+**Features:**
+- Same visualizations as customer dashboard
+- Internal mode reveals actual model names (e.g., "openrouter/deepseek-coder")
+- For development and internal analysis only
+
+**Security Warning:**
+- Contains competitive intelligence (model selection strategy)
+- Exposes cost optimization approach
+- NEVER share with customers or external parties
+
+### Model Abstraction Layer
+
+The system uses a two-tier architecture for competitive protection:
+
+**Internal View (Admin Only):**
+- Full model names: "openrouter/deepseek-coder", "claude/claude-3-haiku", etc.
+- Used for development, debugging, and internal analysis
+- Contains competitive intelligence
+
+**External View (Customer-Facing):**
+- Tier labels: "Economy Tier", "Premium Tier", "Standard Tier", "Specialty Tier"
+- Protects which specific models/providers are used
+- Delivers value without exposing strategy
+
+**Why This Matters:**
+- Prevents competitors from copying your model selection strategy
+- Protects hard-won knowledge about which models work best for each task
+- Maintains competitive advantage while delivering customer value
+
+**File Mapping:**
+- `model_abstraction.py` - Tier mapping logic
+- `customer_dashboard.py` - External view only, customer-safe
+- `admin_dashboard.py` - Both views, internal use only
+- Tools with `mode` parameter - Respects view separation
+
 ## Tips for Best Results
 
 1. **Use Session Mode** for exploratory analysis
@@ -232,6 +423,8 @@ source .venv/bin/activate
 3. **Request Comparisons** to understand trade-offs
 4. **Ask for Recommendations** regularly to stay optimized
 5. **Provide Context** (e.g., "last week", "high-cost queries")
+6. **Use Learning Tools** to leverage historical performance data
+7. **Check Pattern Analysis** to understand learning maturity
 
 ## Performance
 
