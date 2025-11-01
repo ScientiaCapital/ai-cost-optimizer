@@ -1,328 +1,329 @@
-# Claude Instructions for AI Cost Optimizer
+# CLAUDE.md - AI Cost Optimizer
 
-## Project Overview
+## 1. Project Status & Overview
 
-AI Cost Optimizer is a multi-LLM routing system that automatically selects the most cost-efficient model based on task complexity. Built as a learning project and personal tool that others might find useful.
+**Current Status**: Active Development  
+**Version**: 1.0.0  
+**Type**: AI/ML Cost Optimization Service  
 
-**GitHub**: https://github.com/ScientiaCapital/ai-cost-optimizer
+The AI Cost Optimizer is a FastAPI-based service that intelligently routes LLM prompts to the most cost-effective AI model based on prompt complexity analysis. It serves as both a standalone API and an MCP (Model Context Protocol) server for Claude Desktop integration.
 
-## Project Philosophy
+**Key Features**:
+- Smart prompt analysis and routing
+- Multi-provider support (Gemini, Claude, OpenRouter)
+- Real-time cost tracking in SQLite
+- Claude Desktop MCP integration
+- Fallback routing for reliability
 
-- **GTME (Give This to ME)**: Learning by building tools for personal use
-- **Scratch Your Own Itch**: Solving real problems (unpredictable AI costs)
-- **Share What Works**: Open source for others who face the same challenges
-- **Practical Over Perfect**: Ship working solutions, iterate based on usage
+## 2. Technology Stack
 
-## Tech Stack
+### Core Framework & Runtime
+- **Language**: Python 3.8+
+- **Web Framework**: FastAPI (with automatic OpenAPI docs)
+- **ASGI Server**: Uvicorn with standard extras
+- **Environment Management**: python-dotenv
 
-- **Backend**: FastAPI + Python 3.11
-- **Routing**: Custom complexity analysis algorithm
-- **Database**: SQLite (development) / Persistent volume (production)
-- **Integration**: Model Context Protocol (MCP) for Claude Desktop
-- **Deployment**: Docker + RunPod
-- **Providers**: Anthropic, Google, Cerebras, DeepSeek, OpenRouter, HuggingFace, Cartesia
+### Data & Validation
+- **Data Validation**: Pydantic v2
+- **Database**: SQLite with sqlite3
+- **HTTP Client**: httpx for async API calls
 
-## Project Structure
+### AI/ML Components
+- **Primary Providers**: Google Gemini, Anthropic Claude, OpenRouter
+- **Token Counting**: Custom token estimation logic
+- **Complexity Analysis**: Keyword-based + length-based scoring
 
-```
-ai-cost-optimizer/
-├── main.py                 # FastAPI application entry point
-├── router.py               # Smart routing logic (complexity → model selection)
-├── provider_manager.py     # Provider abstraction layer
-├── cost_tracker.py         # Cost calculation and tracking
-├── budget.py               # Budget management and alerts
-├── config.py               # Configuration with smart DB path detection
-├── providers/              # LLM provider implementations
-│   ├── __init__.py        # Base classes
-│   ├── anthropic_provider.py
-│   ├── google_provider.py
-│   ├── cerebras_provider.py
-│   ├── deepseek_provider.py
-│   ├── openrouter.py
-│   ├── cartesia_provider.py
-│   └── huggingface_provider.py
-├── mcp/                    # Claude Desktop integration
-│   ├── server.py          # MCP protocol implementation
-│   ├── mcp.json           # Server manifest
-│   └── README.md          # Setup instructions
-├── skill-package/          # Marketplace distribution
-│   ├── SKILL.md           # Marketplace listing
-│   ├── deployment/        # RunPod deployment files
-│   └── screenshots/       # Demo assets (to be added)
-└── Dockerfile             # Production container
+### Development & Testing
+- **Testing**: pytest
+- **Containerization**: Docker & Docker Compose
+- **Code Quality**: Pre-commit hooks (if configured)
 
-```
+## 3. Development Workflow
 
-## Key Concepts
-
-### Complexity Scoring (0.0 - 1.0)
-
-The router analyzes prompts and assigns complexity scores:
-- **0.0-0.2 (Free)**: Simple facts, definitions → Gemini Flash
-- **0.2-0.4 (Cheap)**: Code snippets, summaries → Cerebras, DeepSeek, Haiku
-- **0.4-0.7 (Medium)**: Analysis, explanations → Gemini Pro, Sonnet
-- **0.7-1.0 (Premium)**: Architecture, research → Opus, GPT-4
-
-**Factors**:
-- Prompt length
-- Technical keywords
-- Code presence
-- Structural complexity
-
-### Cost Tiers
-
-See `config.py` MODEL_TIERS for the complete mapping of (provider, model) → tier.
-
-### Provider Architecture
-
-Each provider implements:
-- `complete(model, prompt, max_tokens)` → CompletionResult
-- `get_models()` → List[ModelInfo]
-- `calculate_cost(model, input_tokens, output_tokens)` → float
-
-The `ProviderManager` auto-initializes providers based on available API keys.
-
-## Development Guidelines
-
-### Adding a New Provider
-
-1. **Create provider file** in `providers/`:
-   ```python
-   from . import LLMProvider, CompletionResult, ModelInfo
-
-   class NewProvider(LLMProvider):
-       def __init__(self, api_key: str):
-           self.api_key = api_key
-
-       async def complete(...) -> CompletionResult:
-           # Implementation
-
-       def get_models(self) -> List[ModelInfo]:
-           # Return model list with pricing
-   ```
-
-2. **Update `config.py`**:
-   - Add to `PROVIDER_CONFIGS`
-   - Add models to `PROVIDER_MODELS`
-   - Add to appropriate `MODEL_TIERS`
-
-3. **Update `provider_manager.py`**:
-   - Import the provider
-   - Add initialization logic
-
-4. **Test**:
-   ```bash
-   export NEW_PROVIDER_API_KEY=your-key
-   python main.py
-   curl http://localhost:8000/v1/providers
-   ```
-
-### Modifying Complexity Analysis
-
-The routing logic is in `router.py`:
-- `analyze_complexity(prompt)` → float
-- `route_request(prompt, budget_limit)` → (provider, model, complexity)
-
-**Be careful**: Changes affect all routing decisions!
-
-### Adding MCP Tools
-
-To add a new tool to the Claude Desktop integration:
-
-1. **Update `mcp/mcp.json`**: Add tool definition
-2. **Update `mcp/server.py`**:
-   - Add tool in `list_tools()`
-   - Implement handler method
-   - Add case in `call_tool()`
-3. **Test with Claude Desktop**
-
-## Working with This Project
-
-### Common Tasks
-
-**Start service locally**:
+### Initial Setup
 ```bash
-python main.py
-# Visit http://localhost:8000/docs
+# Clone and setup
+git clone <repository>
+cd ai-cost-optimizer
+
+# Environment setup
+cp .env.example .env
+# Edit .env with your API keys
+
+# Install dependencies
+pip install -r requirements.txt
+pip install -r mcp/requirements.txt
 ```
 
-**Test routing**:
+### Running the Application
+
+**Development Mode**:
 ```bash
-curl -X POST http://localhost:8000/v1/complete \
+# Run FastAPI with auto-reload
+python app/main.py
+# or
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Production Mode**:
+```bash
+# Using Docker
+docker-compose up --build
+
+# Or directly
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Testing
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=app tests/
+
+# Run specific test file
+pytest tests/test_routing.py -v
+```
+
+### Building & Deployment
+```bash
+# Build Docker image
+docker build -t ai-cost-optimizer .
+
+# Run with Docker
+docker run -p 8000:8000 --env-file .env ai-cost-optimizer
+```
+
+## 4. Environment Variables
+
+Create a `.env` file with:
+
+### Required (at least one provider)
+```env
+# Gemini (Recommended for free tier)
+GOOGLE_API_KEY=your_gemini_key
+
+# Anthropic Claude  
+ANTHROPIC_API_KEY=your_claude_key
+
+# OpenRouter (Fallback)
+OPENROUTER_API_KEY=your_openrouter_key
+```
+
+### Optional Configuration
+```env
+# Service Configuration
+COST_OPTIMIZER_API_URL=http://localhost:8000
+DATABASE_URL=sqlite:///./costs.db
+LOG_LEVEL=INFO
+
+# MCP Server (for Claude Desktop)
+MCP_SERVER_PORT=8001
+```
+
+## 5. Key Files & Their Purposes
+
+### Core Application
+- `app/main.py` - FastAPI application entry point, route definitions
+- `app/routing/` - Prompt analysis and model routing logic
+- `app/providers/` - API clients for different LLM providers
+- `app/database/` - SQLite cost tracking and database operations
+- `app/models/` - Pydantic models for request/response schemas
+
+### MCP Integration
+- `mcp/server.py` - MCP server implementation for Claude Desktop
+- `mcp/requirements.txt` - MCP-specific dependencies
+
+### Configuration & Deployment
+- `requirements.txt` - Main application dependencies
+- `Dockerfile` - Containerization configuration
+- `docker-compose.yml` - Multi-service setup
+- `.env.example` - Environment template
+
+### Testing
+- `tests/` - Test suite with unit and integration tests
+- `tests/test_routing.py` - Routing logic tests
+- `tests/test_providers.py` - Provider API tests
+
+## 6. Testing Approach
+
+### Test Structure
+```python
+# Example test pattern
+def test_prompt_routing_simple():
+    """Test that simple prompts route to Gemini"""
+    prompt = "Hello, how are you?"
+    result = router.analyze_prompt(prompt)
+    assert result.provider == "gemini"
+    assert result.is_complex == False
+
+def test_provider_fallback():
+    """Test fallback behavior when primary provider fails"""
+    # Mock primary provider to fail
+    # Verify fallback to OpenRouter
+```
+
+### Running Tests
+```bash
+# Complete test suite
+pytest
+
+# Specific test category
+pytest tests/test_routing.py
+pytest tests/test_providers.py
+
+# With verbose output
+pytest -v --tb=short
+
+# Test coverage report
+pytest --cov=app --cov-report=html
+```
+
+### Test Data
+- Mock API responses for providers
+- Sample prompts of varying complexity
+- Database state management with fixtures
+
+## 7. Deployment Strategy
+
+### Local Development
+- Direct Python execution with auto-reload
+- SQLite for cost tracking
+- Local environment variables
+
+### Docker Deployment
+```bash
+# Development
+docker-compose -f docker-compose.dev.yml up
+
+# Production
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### Production Considerations
+- Use PostgreSQL instead of SQLite for production
+- Implement proper secret management
+- Add monitoring and health checks
+- Configure reverse proxy (nginx) for SSL termination
+
+## 8. Coding Standards
+
+### FastAPI Specific Standards
+```python
+# Use Pydantic v2 style
+from pydantic import BaseModel, Field
+
+class PromptRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=10000)
+    user_id: str | None = Field(None, description="Optional user identifier")
+
+# Use async/await for I/O operations
+@app.post("/chat")
+async def chat_endpoint(request: PromptRequest):
+    result = await router.route_prompt(request.prompt)
+    return ChatResponse(**result.dict())
+```
+
+### Project-Specific Conventions
+- Provider classes must implement `send_message()` method
+- All cost calculations in USD cents for precision
+- Use dependency injection for API clients
+- Log all routing decisions and costs
+
+### Error Handling Pattern
+```python
+try:
+    response = await provider.send_message(prompt)
+except ProviderError as e:
+    logger.warning(f"Provider {provider.name} failed: {e}")
+    return await fallback_provider.send_message(prompt)
+```
+
+## 9. Common Tasks & Commands
+
+### Development Tasks
+```bash
+# Start development server
+python app/main.py
+
+# Run tests
+pytest
+
+# Check code style (if configured)
+flake8 app/ tests/
+
+# Format code (if configured)
+black app/ tests/
+```
+
+### MCP Server Management
+```bash
+# Test MCP server directly
+python mcp/server.py
+
+# Update Claude Desktop config
+# Edit: ~/Library/Application Support/Claude/claude_desktop_config.json
+```
+
+### Database Operations
+```bash
+# View cost tracking data
+sqlite3 costs.db "SELECT * FROM api_costs ORDER BY timestamp DESC LIMIT 10;"
+
+# Reset cost tracking (development)
+rm costs.db
+```
+
+### Debugging Commands
+```bash
+# Check API health
+curl http://localhost:8000/health
+
+# Test routing directly
+curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "What is AI?", "max_tokens": 100}'
+  -d '{"prompt": "Explain quantum computing"}'
 ```
 
-**Check available models**:
-```bash
-curl http://localhost:8000/v1/models
+## 10. Troubleshooting Tips
+
+### Common Issues
+
+**MCP Server Not Connecting**:
+- Verify absolute path in Claude Desktop config
+- Check `COST_OPTIMIZER_API_URL` environment variable
+- Restart Claude Desktop completely (don't just relaunch)
+
+**Provider API Errors**:
+- Verify API keys in `.env` file
+- Check provider service status
+- Review API rate limits and quotas
+
+**Database Issues**:
+- Ensure write permissions in project directory
+- Check SQLite file isn't locked by another process
+
+### Debug Mode
+```python
+# Enable debug logging
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Or set in environment
+LOG_LEVEL=DEBUG
 ```
 
-**Build Docker image**:
-```bash
-docker build -t ai-cost-optimizer:latest .
-```
+### Health Check Endpoints
+- `GET /health` - Service status
+- `GET /providers` - Available provider status
+- `GET /costs/summary` - Cost tracking summary
 
-### Configuration
-
-**Environment Variables**:
-- Provider API keys: `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.
-- Budget: `DEFAULT_MONTHLY_BUDGET=100.0`
-- Database: `DATABASE_URL` (auto-detected if unset)
-- Logging: `LOG_LEVEL=INFO`
-
-**Smart defaults**:
-- Database: Uses `/data/optimizer.db` in production, `./optimizer.db` locally
-- Providers: Auto-enabled based on available API keys
-- Budget: $100/month default
-
-## Current State
-
-### What Works ✅
-
-- FastAPI service with 6 endpoints
-- Smart routing based on complexity
-- 7 provider integrations (Anthropic, Google, Cerebras, DeepSeek, OpenRouter, HuggingFace, Cartesia)
-- Cost tracking and budget management
-- Full SQLite persistence (cost tracking, response caching, quality feedback)
-- MCP server for Claude Desktop (5 tools)
-- Docker containerization
-- RunPod deployment configuration
-- Health checks and metrics endpoints
-- Production logging
-
-### What's Stubbed 🚧
-
-- Email/webhook alerts (budget alerts stubbed)
-- Advanced analytics and reporting
-
-### What's Missing ❌
-
-- Icon for marketplace (512x512 PNG needed)
-- Screenshots for marketplace (3-5 needed)
-- Actual usage in production (needs testing)
-- Dashboard UI (Streamlit planned)
-
-## Known Issues
-
-1. **Budget alerts**: Thresholds calculated but no actual alerting
-2. **OpenRouter**: Some models may have different pricing
-3. **Complexity**: Heuristic-based, not ML-powered (yet)
-
-## Future Plans
-
-**v1.1** (Next):
-- Implement budget alert notifications (email, webhook, logging)
-- Add interactive CLI testing tool
-- Add Streamlit dashboard
-
-**v1.2** (Later):
-- ML-based complexity prediction
-- A/B testing framework
-- Response quality scoring
-
-**v2.0** (Future):
-- Cost vs quality optimization curves
-- Team collaboration features
-- Advanced analytics
-
-## Testing with Claude Desktop
-
-After making changes:
-
-1. **Restart FastAPI service**:
-   ```bash
-   python main.py
-   ```
-
-2. **Restart Claude Desktop**: Completely quit and reopen
-
-3. **Test in conversation**:
-   ```
-   Please use the cost optimizer to complete: "What is quantum computing?"
-   ```
-
-4. **Check logs**:
-   - FastAPI: Terminal output
-   - MCP Server: Claude Desktop logs
-
-## Debugging Tips
-
-**Service not starting**:
-- Check API keys are set
-- Verify Python version >= 3.10
-- Check port 8000 is available
-
-**MCP server not appearing**:
-- Verify absolute path in `claude_desktop_config.json`
-- Check Python is in PATH
-- Look at Claude Desktop logs
-
-**Wrong model selected**:
-- Check complexity score in response
-- Review `router.py` analyze_complexity()
-- Verify model is in correct tier in `config.py`
-
-**Provider errors**:
-- Check API key is valid
-- Verify provider is enabled in response to `/v1/providers`
-- Check provider's rate limits
-
-## Code Style
-
-- **Async/await**: Use for all I/O operations
-- **Type hints**: Required for function signatures
-- **Docstrings**: Use for public methods
-- **Error handling**: Be specific, provide helpful messages
-- **Logging**: Use `logger.info/error` not `print()`
-
-## Important Notes
-
-- **No API keys in code**: Always use environment variables
-- **Smart defaults**: The app should work with minimal config
-- **User-friendly errors**: Help users fix problems
-- **Cost awareness**: Default to cheaper models when uncertain
-- **Fail gracefully**: Handle provider outages elegantly
-
-## Questions to Ask
-
-When working on this project, consider:
-
-1. **Does this save users money?** The core value proposition
-2. **Is the routing decision clear?** Users should understand why a model was chosen
-3. **Does it handle failures well?** Providers go down, API keys expire
-4. **Is the cost tracking accurate?** Users need to trust the numbers
-5. **Can someone deploy this easily?** Minimize friction
-
-## Learning Goals
-
-This project teaches:
-- FastAPI and async Python
-- LLM provider integration
-- Cost optimization algorithms
-- Docker and cloud deployment
-- MCP protocol implementation
-- API design and versioning
-- Production monitoring and logging
-
-## Contributing
-
-This is a personal learning project, but PRs welcome for:
-- Bug fixes
-- New provider integrations
-- Improved complexity analysis
-- Better documentation
-- Test coverage
-
-**Keep it simple**: This is a tool first, not a framework.
-
-## Resources
-
-- **FastAPI**: https://fastapi.tiangolo.com
-- **MCP Protocol**: https://modelcontextprotocol.io
-- **RunPod**: https://docs.runpod.io
-- **Provider APIs**: See each provider's documentation
+### Performance Monitoring
+- Monitor response times in logs
+- Track token usage patterns
+- Review cost per provider in database
 
 ---
 
-**Remember**: This is about solving a real problem (unpredictable AI costs) in a practical way. Keep it working, keep it simple, keep it useful.
+**Maintenance Note**: Regularly update provider API clients as LLM providers frequently change their interfaces and pricing structures.
