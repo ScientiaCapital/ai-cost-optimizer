@@ -9,6 +9,7 @@ from app.routing.strategy import (
     LearningStrategy,
     HybridStrategy
 )
+from app.routing.metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +29,21 @@ class RoutingEngine:
     VALID_PROVIDERS = ['gemini', 'claude', 'openrouter']
     VALID_CONFIDENCE = ['high', 'medium', 'low']
 
-    def __init__(self, db_path: str = "optimizer.db"):
+    def __init__(self, db_path: str = "optimizer.db", track_metrics: bool = True):
         """Initialize routing engine.
 
         Args:
             db_path: Path to database for learning strategy
+            track_metrics: Whether to track routing metrics (default: True)
         """
         self.db_path = db_path
+        self.track_metrics = track_metrics
+
+        # Initialize metrics collector
+        if track_metrics:
+            self.metrics = MetricsCollector(db_path=db_path)
+        else:
+            self.metrics = None
 
         # Initialize all available strategies
         self.strategies: Dict[str, RoutingStrategy] = {
@@ -85,6 +94,10 @@ class RoutingEngine:
                 f"(confidence={decision.confidence}, strategy={decision.strategy_used})"
             )
 
+            # Track metrics if enabled
+            if self.metrics:
+                self.metrics.track_decision(prompt, decision, auto_route)
+
             return decision
 
         except Exception as e:
@@ -95,6 +108,10 @@ class RoutingEngine:
             fallback_decision = self.strategies['complexity'].route(prompt, context)
             fallback_decision.fallback_used = True
             fallback_decision.metadata['fallback_reason'] = str(e)
+
+            # Track metrics for fallback if enabled
+            if self.metrics:
+                self.metrics.track_decision(prompt, fallback_decision, auto_route)
 
             return fallback_decision
 
