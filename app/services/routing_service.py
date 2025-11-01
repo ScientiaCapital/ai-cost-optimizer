@@ -3,7 +3,6 @@ import logging
 from typing import Dict, Any
 
 from app.routing.engine import RoutingEngine
-from app.routing.models import RoutingContext
 from app.database import CostTracker
 
 logger = logging.getLogger(__name__)
