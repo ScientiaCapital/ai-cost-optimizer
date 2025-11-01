@@ -1,9 +1,77 @@
 """SQLite database for cost tracking and usage statistics."""
 import sqlite3
 import hashlib
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+def create_routing_metrics_table(db_path: str = "optimizer.db") -> None:
+    """Create routing_metrics table for tracking routing decisions.
+
+    Table schema:
+    - id: Auto-increment primary key
+    - timestamp: ISO format timestamp
+    - prompt_hash: Hash of the prompt for joining with response_cache
+    - strategy_used: Strategy that made the decision
+    - provider: Selected provider
+    - model: Selected model
+    - confidence: Confidence level (high/medium/low)
+    - auto_route: Whether auto_route was enabled
+    - estimated_cost: Estimated cost for this request
+    - complexity_score: Complexity score from analysis
+    - pattern: Identified pattern (from learning)
+    - fallback_used: Whether fallback was triggered
+    """
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS routing_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            prompt_hash TEXT NOT NULL,
+            strategy_used TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            auto_route INTEGER NOT NULL,
+            estimated_cost REAL,
+            complexity_score REAL,
+            pattern TEXT,
+            fallback_used INTEGER DEFAULT 0,
+            metadata TEXT
+        )
+    """)
+
+    # Create indexes for faster queries
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_routing_metrics_timestamp
+        ON routing_metrics(timestamp)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_routing_metrics_strategy
+        ON routing_metrics(strategy_used)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_routing_metrics_auto_route
+        ON routing_metrics(auto_route, timestamp)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_routing_metrics_confidence
+        ON routing_metrics(confidence, timestamp)
+    """)
+
+    conn.commit()
+    conn.close()
+
+    logger.info("Created routing_metrics table")
 
 
 class CostTracker:
