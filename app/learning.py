@@ -350,124 +350,6 @@ class QueryPatternAnalyzer:
             "learning_active": overall["rated_responses"] >= 5
         }
 
-    # === New Model-Level Tracking Methods (Task 2) ===
-
-    def get_provider_performance(self) -> List[Dict]:
-        """Get provider performance metrics with model-level granularity.
-
-        Returns:
-            List of dicts with provider, model, quality_score, avg_cost, request_count
-        """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        # Query with model-level grouping
-        cursor.execute("""
-            SELECT
-                r.provider,
-                r.model,
-                AVG(CASE WHEN rf.rating IS NOT NULL THEN rf.rating / 5.0 ELSE 0.5 END) as quality_score,
-                AVG(r.cost) as avg_cost,
-                COUNT(*) as request_count
-            FROM requests r
-            LEFT JOIN response_feedback rf ON r.id = rf.request_id
-            WHERE r.model IS NOT NULL AND r.model != ''
-            GROUP BY r.provider, r.model
-            ORDER BY quality_score DESC, avg_cost ASC
-        """)
-
-        results = []
-        for row in cursor.fetchall():
-            results.append({
-                'provider': row[0],
-                'model': row[1],
-                'quality_score': round(row[2], 3),
-                'avg_cost': row[3],
-                'request_count': row[4]
-            })
-
-        conn.close()
-        return results
-
-    def recommend_provider(
-        self,
-        prompt: str,
-        complexity: str,
-        available_providers: List[str]
-    ) -> Dict:
-        """Recommend optimal provider/model based on historical data.
-
-        Args:
-            prompt: User's query text
-            complexity: Prompt complexity level
-            available_providers: List of available provider names
-
-        Returns:
-            Dict with model, confidence, quality_score, avg_cost, reason
-        """
-        pattern = self.identify_pattern(prompt)
-
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        # Get best model for this pattern
-        cursor.execute("""
-            SELECT
-                r.model,
-                AVG(CASE WHEN rf.rating IS NOT NULL THEN rf.rating / 5.0 ELSE 0.5 END) as quality,
-                AVG(r.cost) as cost,
-                COUNT(*) as count
-            FROM requests r
-            LEFT JOIN response_feedback rf ON r.id = rf.request_id
-            WHERE r.model IS NOT NULL
-              AND r.model != ''
-              AND r.prompt_preview LIKE ?
-            GROUP BY r.model
-            HAVING count >= 3
-            ORDER BY quality DESC, cost ASC
-            LIMIT 1
-        """, (f"%{pattern}%",))
-
-        row = cursor.fetchone()
-
-        if row and row[3] >= 10:
-            confidence = "high"
-        elif row and row[3] >= 5:
-            confidence = "medium"
-        else:
-            confidence = "low"
-            # Fallback to best overall model
-            cursor.execute("""
-                SELECT model, AVG(CASE WHEN rf.rating IS NOT NULL THEN rf.rating / 5.0 ELSE 0.5 END) as quality,
-                       AVG(r.cost) as cost, COUNT(*) as count
-                FROM requests r
-                LEFT JOIN response_feedback rf ON r.id = rf.request_id
-                WHERE r.model IS NOT NULL AND r.model != ''
-                GROUP BY model
-                ORDER BY quality DESC, cost ASC
-                LIMIT 1
-            """)
-            row = cursor.fetchone()
-
-        conn.close()
-
-        if row:
-            return {
-                'model': row[0],
-                'quality_score': round(row[1], 3),
-                'avg_cost': row[2],
-                'request_count': row[3],
-                'confidence': confidence,
-                'reason': f"Based on {row[3]} historical {pattern} queries"
-            }
-
-        # Ultimate fallback
-        return {
-            'model': 'google/gemini-flash',
-            'confidence': 'low',
-            'reason': 'Insufficient historical data, using default'
-        }
-
     def get_pattern_confidence_levels(self) -> Dict[str, Dict]:
         """Get confidence levels for each query pattern.
 
@@ -484,28 +366,30 @@ class QueryPatternAnalyzer:
             conn = self._get_connection()
             cursor = conn.cursor()
 
-            # Count samples matching this pattern
-            keywords = "|".join(self.QUERY_PATTERNS[pattern][:5])  # Use first 5 keywords
-
-            # SQLite doesn't have REGEXP by default, use LIKE instead
-            like_conditions = " OR ".join([f"r.prompt_preview LIKE ?" for _ in self.QUERY_PATTERNS[pattern][:5]])
-            params = [f"%{kw}%" for kw in self.QUERY_PATTERNS[pattern][:5]]
+            # Build pattern filter using keywords
+            keywords = self.QUERY_PATTERNS[pattern][:5]  # Use first 5 keywords
+            like_conditions = " OR ".join(["prompt_normalized LIKE ?" for _ in keywords])
+            params = [f"%{kw}%" for kw in keywords]
 
             query = f"""
-                SELECT COUNT(*) as count, r.model, AVG(CASE WHEN rf.rating IS NOT NULL THEN rf.rating / 5.0 ELSE 0.5 END) as quality
-                FROM requests r
-                LEFT JOIN response_feedback rf ON r.id = rf.request_id
+                SELECT
+                    COUNT(*) as count,
+                    model,
+                    AVG(quality_score) as quality
+                FROM response_cache
                 WHERE ({like_conditions})
-                GROUP BY r.model
-                ORDER BY quality DESC
+                    AND model IS NOT NULL
+                    AND model != ''
+                GROUP BY model
+                ORDER BY quality DESC, count DESC
                 LIMIT 1
             """
 
             cursor.execute(query, params)
 
             row = cursor.fetchone()
-            count = row[0] if row else 0
-            best_model = row[1] if row and count > 0 else None
+            count = row["count"] if row else 0
+            best_model = row["model"] if row and count > 0 else None
 
             conn.close()
 
