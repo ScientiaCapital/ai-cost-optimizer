@@ -139,7 +139,7 @@ async def handle_call_tool(
                     f"Service URL: {API_BASE_URL}\n\n"
                     f"Please ensure the FastAPI service is running:\n"
                     f"```bash\n"
-                    f"cd /Users/tmkipper/Desktop/tk_projects/ai-cost-optimizer\n"
+                    f"cd /path/to/ai-cost-optimizer\n"
                     f"python app/main.py\n"
                     f"```"
                 )

@@ -73,7 +73,7 @@ Add the MCP server:
     "ai-cost-optimizer": {
       "command": "python3",
       "args": [
-        "/Users/tmkipper/Desktop/tk_projects/ai-cost-optimizer/mcp/server.py"
+        "/ABSOLUTE/PATH/TO/ai-cost-optimizer/mcp/server.py"
       ],
       "env": {
         "COST_OPTIMIZER_API_URL": "http://localhost:8000"

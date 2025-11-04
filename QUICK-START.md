@@ -12,7 +12,7 @@ Simplified AI Cost Optimizer with:
 
 ### 1. Add Your API Keys
 
-Edit `/Users/tmkipper/Desktop/tk_projects/ai-cost-optimizer/.env`:
+Edit `.env` in your project directory:
 
 ```bash
 # Pick at least ONE provider:
@@ -35,7 +35,7 @@ OPENROUTER_API_KEY=your-key-from-openrouter.ai
 ### 2. Start the Service
 
 ```bash
-cd /Users/tmkipper/Desktop/tk_projects/ai-cost-optimizer
+cd /path/to/ai-cost-optimizer
 python app/main.py
 ```
 
@@ -71,7 +71,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
     "ai-cost-optimizer": {
       "command": "python3",
       "args": [
-        "/Users/tmkipper/Desktop/tk_projects/ai-cost-optimizer/mcp/server.py"
+        "/ABSOLUTE/PATH/TO/ai-cost-optimizer/mcp/server.py"
       ],
       "env": {
         "COST_OPTIMIZER_API_URL": "http://localhost:8000"
