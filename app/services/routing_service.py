@@ -1,6 +1,7 @@
 """Service layer for intelligent routing."""
 import hashlib
 import logging
+import uuid
 from typing import Dict, Any
 
 from app.routing.engine import RoutingEngine
@@ -71,7 +72,11 @@ class RoutingService:
 
             total_cost = self.cost_tracker.get_total_cost()
 
+            # Generate unique request_id even for cached responses
+            request_id = str(uuid.uuid4())
+
             return {
+                "request_id": request_id,
                 "response": cached["response"],
                 "provider": cached["provider"],
                 "model": cached["model"],
@@ -101,13 +106,19 @@ class RoutingService:
 
         # Execute with selected provider
         provider = self.providers[decision.provider]
-        response = await provider.send_message(prompt, max_tokens=max_tokens)
 
-        # Extract response data
-        response_text = response.get("response", response.get("text", ""))
-        tokens_in = response.get("tokens_in", response.get("usage", {}).get("input_tokens", 0))
-        tokens_out = response.get("tokens_out", response.get("usage", {}).get("output_tokens", 0))
-        cost = response.get("cost", 0.0)
+        # Call provider's complete() method - returns (text, input_tokens, output_tokens, cost)
+        if decision.provider == "openrouter":
+            response_text, tokens_in, tokens_out, cost = await provider.complete(
+                model=decision.model,
+                prompt=prompt,
+                max_tokens=max_tokens
+            )
+        else:
+            response_text, tokens_in, tokens_out, cost = await provider.complete(
+                prompt=prompt,
+                max_tokens=max_tokens
+            )
 
         # Store in cache
         self.cost_tracker.store_in_cache(
@@ -139,7 +150,11 @@ class RoutingService:
         normalized = " ".join(prompt.split())
         cache_key = hashlib.sha256(f"{normalized}|{max_tokens}".encode()).hexdigest()
 
+        # Generate unique request_id for feedback tracking
+        request_id = str(uuid.uuid4())
+
         return {
+            "request_id": request_id,
             "response": response_text,
             "provider": decision.provider,
             "model": decision.model,

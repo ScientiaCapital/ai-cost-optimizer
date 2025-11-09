@@ -55,6 +55,7 @@ def test_route_and_complete_cache_hit(providers, tmp_path):
         assert result["cache_hit"] is True
         assert result["cost"] == 0.0  # Cache hits are free
         assert result["original_cost"] == 0.001
+        assert result["request_id"] is not None  # Verify request_id is generated
 
 
 @pytest.mark.asyncio
@@ -62,14 +63,15 @@ async def test_route_and_complete_cache_miss(providers, tmp_path):
     """Test route_and_complete with cache miss (full routing)."""
     db_path = str(tmp_path / "test.db")
 
-    # Create mock provider with async send_message
+    # Create mock provider with async complete() method
+    # complete() returns (text, input_tokens, output_tokens, cost)
     mock_provider = Mock()
-    mock_provider.send_message = AsyncMock(return_value={
-        "response": "Provider response text",
-        "tokens_in": 20,
-        "tokens_out": 100,
-        "cost": 0.005
-    })
+    mock_provider.complete = AsyncMock(return_value=(
+        "Provider response text",  # response text
+        20,                         # tokens_in
+        100,                        # tokens_out
+        0.005                       # cost
+    ))
 
     providers_dict = {"gemini": mock_provider}
     service = RoutingService(db_path=db_path, providers=providers_dict)
@@ -88,7 +90,8 @@ async def test_route_and_complete_cache_miss(providers, tmp_path):
     assert result["cost"] == 0.005
     assert result["tokens_in"] == 20
     assert result["tokens_out"] == 100
-    assert mock_provider.send_message.called
+    assert result["request_id"] is not None  # Verify request_id is generated
+    assert mock_provider.complete.called
 
 
 def test_get_recommendation(providers, tmp_path):

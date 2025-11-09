@@ -102,6 +102,7 @@ class CompleteRequest(BaseModel):
 
 class CompleteResponse(BaseModel):
     """Response model for completion endpoint."""
+    request_id: str     # NEW: Unique request ID for feedback tracking
     response: str
     provider: str
     model: str
@@ -205,6 +206,7 @@ async def complete_prompt(request: CompleteRequest):
                 logger.warning(f"Tokenizer metrics unavailable: {ex}")
 
         return CompleteResponse(
+            request_id=result["request_id"],
             response=result["response"],
             provider=result["provider"],
             model=result["model"],
