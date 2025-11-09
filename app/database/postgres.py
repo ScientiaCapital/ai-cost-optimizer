@@ -7,10 +7,13 @@ from contextlib import contextmanager
 
 def get_database_url():
     """Get PostgreSQL database URL from environment."""
-    return os.getenv(
-        'DATABASE_URL',
-        'postgresql://optimizer_user:password@localhost:5432/optimizer'
-    )
+    db_url = os.getenv('DATABASE_URL')
+    if not db_url:
+        raise ValueError(
+            "DATABASE_URL environment variable is required. "
+            "Example: postgresql://user:password@localhost:5432/optimizer"
+        )
+    return db_url
 
 
 @contextmanager

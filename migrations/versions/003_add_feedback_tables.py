@@ -40,6 +40,9 @@ def upgrade():
         sa.Column('user_id', sa.Text(), nullable=True),
         sa.Column('session_id', sa.Text(), nullable=True),
         sa.Column('comment', sa.Text(), nullable=True),
+
+        # Foreign key constraint
+        sa.ForeignKeyConstraint(['request_id'], ['routing_metrics.request_id']),
     )
 
     # Create indexes

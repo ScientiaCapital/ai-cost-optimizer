@@ -1,15 +1,22 @@
 """Tests for PostgreSQL migration to feedback tables."""
+import os
 import pytest
 import psycopg2
 from alembic import command
 from alembic.config import Config
 
 
+TEST_DB_URL = os.getenv(
+    'TEST_DATABASE_URL',
+    'postgresql://test:test@localhost:5432/test_optimizer'
+)
+
+
 @pytest.fixture
 def alembic_config():
     """Create Alembic config for testing."""
     config = Config("alembic.ini")
-    config.set_main_option("sqlalchemy.url", "postgresql://test:test@localhost:5432/test_optimizer")
+    config.set_main_option("sqlalchemy.url", TEST_DB_URL)
     return config
 
 
@@ -19,7 +26,7 @@ def test_feedback_tables_migration(alembic_config):
     command.upgrade(alembic_config, "head")
 
     # Connect and verify table exists
-    conn = psycopg2.connect("postgresql://test:test@localhost:5432/test_optimizer")
+    conn = psycopg2.connect(TEST_DB_URL)
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -46,7 +53,7 @@ def test_model_performance_history_migration(alembic_config):
     """Test migration creates model_performance_history table."""
     command.upgrade(alembic_config, "head")
 
-    conn = psycopg2.connect("postgresql://test:test@localhost:5432/test_optimizer")
+    conn = psycopg2.connect(TEST_DB_URL)
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -64,6 +71,26 @@ def test_model_performance_history_migration(alembic_config):
     assert 'correctness_rate' in columns
     assert 'sample_count' in columns
     assert 'confidence_level' in columns
+
+    cursor.close()
+    conn.close()
+
+
+def test_foreign_key_constraint_exists(alembic_config):
+    """Test foreign key constraint on response_feedback.request_id."""
+    command.upgrade(alembic_config, "head")
+    conn = psycopg2.connect(TEST_DB_URL)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT constraint_name
+        FROM information_schema.table_constraints
+        WHERE table_name = 'response_feedback'
+        AND constraint_type = 'FOREIGN KEY'
+    """)
+
+    constraints = cursor.fetchall()
+    assert len(constraints) > 0, "Foreign key constraint missing"
 
     cursor.close()
     conn.close()
