@@ -13,6 +13,12 @@ from .database import CostTracker
 from app.services.routing_service import RoutingService
 from app.models.feedback import FeedbackRequest as ProductionFeedbackRequest, FeedbackResponse as ProductionFeedbackResponse
 from app.database.feedback_store import FeedbackStore
+from app.models.admin import (
+    FeedbackSummary, LearningStatus,
+    RetrainingResult, PerformanceTrends
+)
+from app.learning.feedback_trainer import FeedbackTrainer
+from app.database.postgres import get_connection, get_cursor
 
 # Load environment variables
 load_dotenv()
@@ -54,6 +60,7 @@ routing_service = RoutingService(
     providers=providers
 )
 feedback_store = FeedbackStore()
+feedback_trainer = FeedbackTrainer()
 
 logger.info(f"AI Cost Optimizer initialized with providers: {list(providers.keys())}")
 
@@ -485,6 +492,181 @@ async def get_learning_insights():
         "migration_note": "Learning insights are being integrated into the new routing engine.",
         "alternative_endpoint": "/routing/metrics"
     }
+
+
+# ============================================================================
+# ADMIN ENDPOINTS
+# ============================================================================
+
+def _is_sqlite(conn) -> bool:
+    """Check if connection is SQLite."""
+    return hasattr(conn, 'row_factory')
+
+
+@app.get("/admin/feedback/summary", response_model=FeedbackSummary)
+async def get_feedback_summary():
+    """Get feedback statistics summary."""
+    with get_connection() as conn:
+        cursor = get_cursor(conn, dict_cursor=True)
+
+        try:
+            # Total feedback and avg quality
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total,
+                    AVG(quality_score) as avg_quality
+                FROM response_feedback
+            """)
+
+            stats = cursor.fetchone()
+
+            # Per-model stats
+            cursor.execute("""
+                SELECT
+                    selected_model,
+                    COUNT(*) as count,
+                    AVG(quality_score) as avg_quality,
+                    AVG(CASE WHEN is_correct THEN 1.0 ELSE 0.0 END) as correctness_rate
+                FROM response_feedback
+                WHERE selected_model IS NOT NULL
+                GROUP BY selected_model
+                ORDER BY count DESC
+            """)
+
+            models = cursor.fetchall()
+
+            return FeedbackSummary(
+                total_feedback=stats['total'],
+                avg_quality_score=float(stats['avg_quality'] or 0),
+                models=[dict(m) for m in models]
+            )
+        except Exception as e:
+            # Table doesn't exist yet - return empty stats
+            logger.warning(f"Feedback table not found: {e}")
+            return FeedbackSummary(
+                total_feedback=0,
+                avg_quality_score=0.0,
+                models=[]
+            )
+
+
+@app.get("/admin/learning/status", response_model=LearningStatus)
+async def get_learning_status():
+    """Get learning pipeline status."""
+    with get_connection() as conn:
+        cursor = get_cursor(conn, dict_cursor=True)
+
+        try:
+            # Get last run from performance history
+            cursor.execute("""
+                SELECT
+                    retraining_run_id,
+                    MAX(updated_at) as last_run
+                FROM model_performance_history
+                GROUP BY retraining_run_id
+                ORDER BY last_run DESC
+                LIMIT 1
+            """)
+
+            last_run = cursor.fetchone()
+
+            # Get confidence distribution
+            cursor.execute("""
+                SELECT
+                    confidence_level,
+                    COUNT(DISTINCT pattern) as count
+                FROM model_performance_history
+                WHERE retraining_run_id = (
+                    SELECT retraining_run_id
+                    FROM model_performance_history
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                )
+                GROUP BY confidence_level
+            """)
+
+            conf_dist = {row['confidence_level']: row['count'] for row in cursor.fetchall()}
+
+            return LearningStatus(
+                last_retraining_run=last_run['last_run'].isoformat() if last_run else None,
+                next_scheduled_run=None,  # TODO: Add scheduler info
+                confidence_distribution={
+                    'high': conf_dist.get('high', 0),
+                    'medium': conf_dist.get('medium', 0),
+                    'low': conf_dist.get('low', 0)
+                },
+                total_patterns=sum(conf_dist.values())
+            )
+        except Exception as e:
+            # Table doesn't exist yet - return empty status
+            logger.warning(f"Performance history table not found: {e}")
+            return LearningStatus(
+                last_retraining_run=None,
+                next_scheduled_run=None,
+                confidence_distribution={'high': 0, 'medium': 0, 'low': 0},
+                total_patterns=0
+            )
+
+
+@app.post("/admin/learning/retrain", response_model=RetrainingResult)
+async def trigger_retraining(dry_run: bool = True):
+    """Manually trigger retraining.
+
+    Args:
+        dry_run: If True, preview changes without applying
+
+    Returns:
+        Retraining result summary
+    """
+    result = feedback_trainer.retrain(dry_run=dry_run)
+
+    return RetrainingResult(**result)
+
+
+@app.get("/admin/performance/trends", response_model=PerformanceTrends)
+async def get_performance_trends(pattern: str):
+    """Get performance trends for a pattern.
+
+    Args:
+        pattern: Pattern to analyze (e.g., 'code', 'explanation')
+
+    Returns:
+        Performance trends over time
+    """
+    with get_connection() as conn:
+        cursor = get_cursor(conn, dict_cursor=True)
+        is_sqlite = _is_sqlite(conn)
+        placeholder = '?' if is_sqlite else '%s'
+
+        try:
+            query = f"""
+                SELECT
+                    model,
+                    avg_quality_score,
+                    correctness_rate,
+                    sample_count,
+                    confidence_level,
+                    updated_at
+                FROM model_performance_history
+                WHERE pattern = {placeholder}
+                ORDER BY updated_at DESC
+                LIMIT 20
+            """
+            cursor.execute(query, (pattern,))
+
+            trends = cursor.fetchall()
+
+            return PerformanceTrends(
+                pattern=pattern,
+                trends=[dict(t) for t in trends]
+            )
+        except Exception as e:
+            # Table doesn't exist yet - return empty trends
+            logger.warning(f"Performance history table not found: {e}")
+            return PerformanceTrends(
+                pattern=pattern,
+                trends=[]
+            )
 
 
 # Run the application
