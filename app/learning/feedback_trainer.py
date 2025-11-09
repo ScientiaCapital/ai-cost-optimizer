@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from app.database.postgres import get_connection, get_cursor
-from app.learning import QueryPatternAnalyzer
+from app.learning.query_pattern_analyzer import QueryPatternAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +27,8 @@ class FeedbackTrainer:
     MIN_QUALITY_SCORE = 3.5
     MIN_CORRECTNESS_RATE = 0.7
 
-    def __init__(self, db_url: Optional[str] = None):
-        """Initialize trainer with database connection.
-
-        Args:
-            db_url: Optional database URL (for testing)
-        """
-        self.db_url = db_url
+    def __init__(self):
+        """Initialize trainer with database connection."""
         self.analyzer = QueryPatternAnalyzer(db_path=None)  # Uses PostgreSQL
 
     def retrain(self, dry_run: bool = False) -> Dict[str, Any]:

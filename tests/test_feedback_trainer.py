@@ -8,7 +8,7 @@ from app.learning.feedback_trainer import FeedbackTrainer
 def trainer(tmp_path):
     """Create FeedbackTrainer with test database."""
     # Setup test database connection
-    return FeedbackTrainer(db_url="postgresql://test:test@localhost:5432/test_optimizer")
+    return FeedbackTrainer()
 
 
 def test_confidence_calculation_high(trainer):
