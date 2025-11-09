@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from .providers import init_providers
 from .database import CostTracker
 from app.services.routing_service import RoutingService
+from app.models.feedback import FeedbackRequest as ProductionFeedbackRequest, FeedbackResponse as ProductionFeedbackResponse
+from app.database.feedback_store import FeedbackStore
 
 # Load environment variables
 load_dotenv()
@@ -51,6 +53,7 @@ routing_service = RoutingService(
     db_path=os.getenv("DATABASE_PATH", "optimizer.db"),
     providers=providers
 )
+feedback_store = FeedbackStore()
 
 logger.info(f"AI Cost Optimizer initialized with providers: {list(providers.keys())}")
 
@@ -409,13 +412,6 @@ async def submit_feedback(request: FeedbackRequest, user_agent: Optional[str] = 
     except Exception as e:
         logger.error(f"Error processing feedback: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# Initialize production feedback store
-from app.models.feedback import FeedbackRequest as ProductionFeedbackRequest, FeedbackResponse as ProductionFeedbackResponse
-from app.database.feedback_store import FeedbackStore
-
-feedback_store = FeedbackStore()
 
 
 @app.post("/production/feedback", response_model=ProductionFeedbackResponse)
