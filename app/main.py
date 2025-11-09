@@ -411,6 +411,50 @@ async def submit_feedback(request: FeedbackRequest, user_agent: Optional[str] = 
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Initialize production feedback store
+from app.models.feedback import FeedbackRequest as ProductionFeedbackRequest, FeedbackResponse as ProductionFeedbackResponse
+from app.database.feedback_store import FeedbackStore
+
+feedback_store = FeedbackStore()
+
+
+@app.post("/production/feedback", response_model=ProductionFeedbackResponse)
+async def submit_production_feedback(request: ProductionFeedbackRequest):
+    """Submit quality feedback for a request.
+
+    This endpoint collects user feedback on response quality for the
+    production learning pipeline. Feedback is used to retrain routing
+    recommendations.
+
+    Args:
+        request: Feedback submission with request_id, quality_score, correctness
+
+    Returns:
+        Feedback confirmation with feedback_id
+    """
+    try:
+        feedback_id = feedback_store.store_feedback(
+            request_id=request.request_id,
+            quality_score=request.quality_score,
+            is_correct=request.is_correct,
+            is_helpful=request.is_helpful,
+            comment=request.comment
+        )
+
+        return ProductionFeedbackResponse(
+            status="recorded",
+            feedback_id=feedback_id,
+            message="Thank you for feedback"
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to store production feedback: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to store feedback"
+        )
+
+
 @app.get("/quality/stats")
 async def get_quality_stats():
     """
