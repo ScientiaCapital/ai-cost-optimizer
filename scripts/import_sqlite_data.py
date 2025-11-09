@@ -1,15 +1,33 @@
 """Import SQLite data to PostgreSQL."""
 import sqlite3
 import psycopg2
+from psycopg2 import sql
 from psycopg2.extras import execute_values
 import os
+import re
+
+
+def validate_identifier(name):
+    """Validate SQL identifier to prevent injection.
+
+    Args:
+        name: Identifier to validate (table or column name)
+
+    Raises:
+        ValueError: If identifier contains invalid characters
+    """
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
+        raise ValueError(f"Invalid SQL identifier: {name}")
 
 
 def get_postgres_conn():
-    """Get PostgreSQL connection."""
-    db_password = os.getenv('DB_PASSWORD', 'password')
+    """Get PostgreSQL connection with secure parameters."""
     return psycopg2.connect(
-        f"postgresql://optimizer_user:{db_password}@localhost:5432/optimizer"
+        host=os.getenv('DB_HOST', 'localhost'),
+        port=int(os.getenv('DB_PORT', '5432')),
+        database=os.getenv('DB_NAME', 'optimizer'),
+        user=os.getenv('DB_USER', 'optimizer_user'),
+        password=os.getenv('DB_PASSWORD', 'password')
     )
 
 
@@ -24,10 +42,13 @@ def migrate_table(sqlite_conn, pg_conn, table_name, column_mapping=None):
     """
     print(f"  Migrating {table_name}...")
 
+    # Validate table name to prevent SQL injection
+    validate_identifier(table_name)
+
     sqlite_cursor = sqlite_conn.cursor()
     pg_cursor = pg_conn.cursor()
 
-    # Get all rows
+    # Get all rows (safe - table_name validated)
     sqlite_cursor.execute(f"SELECT * FROM {table_name}")
     rows = sqlite_cursor.fetchall()
 
@@ -38,16 +59,26 @@ def migrate_table(sqlite_conn, pg_conn, table_name, column_mapping=None):
     # Get column names
     columns = [desc[0] for desc in sqlite_cursor.description]
 
+    # Validate all column names
+    for col in columns:
+        validate_identifier(col)
+
     # Apply column mapping if provided
     if column_mapping:
         columns = [column_mapping.get(col, col) for col in columns]
+        # Re-validate mapped columns
+        for col in columns:
+            validate_identifier(col)
 
-    # Insert into PostgreSQL
-    insert_sql = f"""
-        INSERT INTO {table_name} ({', '.join(columns)})
+    # Insert into PostgreSQL using sql.Identifier for safety
+    insert_sql = sql.SQL("""
+        INSERT INTO {table} ({columns})
         VALUES %s
         ON CONFLICT DO NOTHING
-    """
+    """).format(
+        table=sql.Identifier(table_name),
+        columns=sql.SQL(', ').join(sql.Identifier(col) for col in columns)
+    )
 
     execute_values(pg_cursor, insert_sql, rows)
     pg_conn.commit()
