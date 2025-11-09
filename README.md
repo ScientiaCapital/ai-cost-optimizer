@@ -135,6 +135,66 @@ curl http://localhost:8000/stats
 curl http://localhost:8000/stats | jq '.overall.total_cost'
 ```
 
+## Docker Deployment
+
+### Production
+
+Start all services with PostgreSQL, FastAPI, and pgAdmin:
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit with your API keys and passwords
+nano .env
+
+# Build and start services
+docker-compose up -d
+
+# Check service status
+docker-compose ps
+
+# View API logs
+docker-compose logs -f api
+
+# Stop services
+docker-compose down
+```
+
+### Development (with hot reload)
+
+For active development with automatic code reloading:
+
+```bash
+# Use development configuration
+docker-compose -f docker-compose.dev.yml up
+
+# Code changes in ./app and ./tests will auto-reload
+# PostgreSQL runs on port 5433 to avoid conflicts
+```
+
+### Accessing Services
+
+- **FastAPI API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
+- **pgAdmin**: http://localhost:5050 (login with credentials from .env)
+- **PostgreSQL**:
+  - Production: `localhost:5432`
+  - Development: `localhost:5433`
+
+### Database Management
+
+```bash
+# Connect to PostgreSQL directly
+docker exec -it optimizer-db psql -U optimizer_user -d optimizer
+
+# Run migrations
+docker-compose exec api alembic upgrade head
+
+# View database logs
+docker-compose logs postgres
+```
+
 ## Project Structure
 
 ```
