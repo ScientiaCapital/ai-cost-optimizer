@@ -3,6 +3,7 @@ import os
 import logging
 import sqlite3
 from typing import Optional
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -31,11 +32,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize retraining scheduler (before lifespan)
+scheduler = None
+
+if os.getenv('ENABLE_SCHEDULER', 'true').lower() == 'true':
+    scheduler = RetrainingScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan events."""
+    # Startup: Start scheduler
+    if scheduler:
+        scheduler.start()
+        logger.info("Retraining scheduler started")
+
+    yield
+
+    # Shutdown: Stop scheduler
+    if scheduler:
+        scheduler.stop()
+        logger.info("Retraining scheduler stopped")
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="AI Cost Optimizer",
     description="Smart multi-LLM routing for cost optimization",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware (configurable via environment)
@@ -62,29 +87,6 @@ routing_service = RoutingService(
 )
 feedback_store = FeedbackStore()
 feedback_trainer = FeedbackTrainer()
-
-# Initialize retraining scheduler
-scheduler = None
-
-if os.getenv('ENABLE_SCHEDULER', 'true').lower() == 'true':
-    scheduler = RetrainingScheduler()
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Start scheduler on app startup."""
-    if scheduler:
-        scheduler.start()
-        logger.info("Retraining scheduler started")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Stop scheduler on app shutdown."""
-    if scheduler:
-        scheduler.stop()
-        logger.info("Retraining scheduler stopped")
-
 
 logger.info(f"AI Cost Optimizer initialized with providers: {list(providers.keys())}")
 
