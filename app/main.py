@@ -19,6 +19,7 @@ from app.models.admin import (
 )
 from app.learning.feedback_trainer import FeedbackTrainer
 from app.database.postgres import get_connection, get_cursor
+from app.scheduler import RetrainingScheduler
 
 # Load environment variables
 load_dotenv()
@@ -61,6 +62,29 @@ routing_service = RoutingService(
 )
 feedback_store = FeedbackStore()
 feedback_trainer = FeedbackTrainer()
+
+# Initialize retraining scheduler
+scheduler = None
+
+if os.getenv('ENABLE_SCHEDULER', 'true').lower() == 'true':
+    scheduler = RetrainingScheduler()
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Start scheduler on app startup."""
+    if scheduler:
+        scheduler.start()
+        logger.info("Retraining scheduler started")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop scheduler on app shutdown."""
+    if scheduler:
+        scheduler.stop()
+        logger.info("Retraining scheduler stopped")
+
 
 logger.info(f"AI Cost Optimizer initialized with providers: {list(providers.keys())}")
 
@@ -618,7 +642,10 @@ async def trigger_retraining(dry_run: bool = True):
     Returns:
         Retraining result summary
     """
-    result = feedback_trainer.retrain(dry_run=dry_run)
+    if scheduler:
+        result = scheduler.trigger_immediate_retraining(dry_run=dry_run)
+    else:
+        result = feedback_trainer.retrain(dry_run=dry_run)
 
     return RetrainingResult(**result)
 

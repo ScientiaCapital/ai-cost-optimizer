@@ -33,3 +33,6 @@ pytest-benchmark>=4.0.0
 # Database migrations
 alembic>=1.12.0
 psycopg2-binary>=2.9.9
+
+# Scheduled jobs
+APScheduler>=3.10.4
