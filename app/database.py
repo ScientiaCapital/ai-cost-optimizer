@@ -138,6 +138,26 @@ class CostTracker:
             )
         """)
 
+        # Routing feedback table - stores feedback on routing decisions
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS routing_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                request_id TEXT NOT NULL,
+                timestamp DATETIME NOT NULL,
+                quality_score INTEGER NOT NULL,
+                is_correct BOOLEAN,
+                is_helpful BOOLEAN,
+                prompt_pattern TEXT,
+                selected_provider TEXT,
+                selected_model TEXT,
+                complexity_score REAL,
+                user_id TEXT,
+                session_id TEXT,
+                comment TEXT,
+                FOREIGN KEY (request_id) REFERENCES routing_metrics(request_id)
+            )
+        """)
+
         # Create indexes for faster lookups
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_cache_prompt
@@ -152,6 +172,22 @@ class CostTracker:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_feedback_cache_key
             ON response_feedback(cache_key)
+        """)
+
+        # Create indexes for routing_feedback performance
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_routing_feedback_pattern
+            ON routing_feedback(prompt_pattern)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_routing_feedback_provider
+            ON routing_feedback(selected_provider)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_routing_feedback_timestamp
+            ON routing_feedback(timestamp)
         """)
 
         conn.commit()
