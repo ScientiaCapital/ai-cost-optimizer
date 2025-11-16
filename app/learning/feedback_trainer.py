@@ -144,7 +144,7 @@ class FeedbackTrainer:
                         AVG(quality_score) as avg_quality,
                         AVG(CASE WHEN is_correct THEN 1.0 ELSE 0.0 END) as correctness_rate,
                         AVG(complexity_score) as avg_complexity
-                    FROM response_feedback
+                    FROM routing_feedback
                     WHERE prompt_pattern IS NOT NULL
                       AND selected_model IS NOT NULL
                       AND datetime(timestamp) > datetime('now', '-90 days')
@@ -162,7 +162,7 @@ class FeedbackTrainer:
                         AVG(quality_score) as avg_quality,
                         AVG(CASE WHEN is_correct THEN 1.0 ELSE 0.0 END) as correctness_rate,
                         AVG(complexity_score) as avg_complexity
-                    FROM response_feedback
+                    FROM routing_feedback
                     WHERE prompt_pattern IS NOT NULL
                       AND selected_model IS NOT NULL
                       AND timestamp > NOW() - INTERVAL '90 days'

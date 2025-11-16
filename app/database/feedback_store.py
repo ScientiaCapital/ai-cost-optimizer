@@ -26,21 +26,21 @@ class FeedbackStore:
                     # SQLite query
                     cursor.execute("""
                         SELECT name FROM sqlite_master
-                        WHERE type='table' AND name IN ('routing_metrics', 'response_feedback')
+                        WHERE type='table' AND name IN ('routing_metrics', 'routing_feedback')
                     """)
                 else:
                     # PostgreSQL query
                     cursor.execute("""
                         SELECT table_name
                         FROM information_schema.tables
-                        WHERE table_name IN ('routing_metrics', 'response_feedback')
+                        WHERE table_name IN ('routing_metrics', 'routing_feedback')
                     """)
 
                 tables = {row[0] for row in cursor.fetchall()}
 
-                if 'response_feedback' not in tables:
+                if 'routing_feedback' not in tables:
                     logger.warning(
-                        "response_feedback table not found. "
+                        "routing_feedback table not found. "
                         "Run migrations: alembic upgrade head"
                     )
         except Exception as e:
@@ -99,7 +99,7 @@ class FeedbackStore:
             if is_sqlite:
                 # SQLite doesn't support RETURNING, use last_insert_rowid
                 query = f"""
-                    INSERT INTO response_feedback (
+                    INSERT INTO routing_feedback (
                         request_id, timestamp, quality_score, is_correct, is_helpful,
                         prompt_pattern, selected_provider, selected_model,
                         complexity_score, user_id, session_id, comment
@@ -127,7 +127,7 @@ class FeedbackStore:
             else:
                 # PostgreSQL supports RETURNING
                 query = f"""
-                    INSERT INTO response_feedback (
+                    INSERT INTO routing_feedback (
                         request_id, timestamp, quality_score, is_correct, is_helpful,
                         prompt_pattern, selected_provider, selected_model,
                         complexity_score, user_id, session_id, comment
@@ -171,7 +171,7 @@ class FeedbackStore:
             is_sqlite = _is_sqlite(conn)
             placeholder = '?' if is_sqlite else '%s'
 
-            query = f"SELECT * FROM response_feedback WHERE id = {placeholder}"
+            query = f"SELECT * FROM routing_feedback WHERE id = {placeholder}"
             cursor.execute(query, (feedback_id,))
 
             result = cursor.fetchone()

@@ -543,7 +543,7 @@ async def get_feedback_summary():
                 SELECT
                     COUNT(*) as total,
                     AVG(quality_score) as avg_quality
-                FROM response_feedback
+                FROM routing_feedback
             """)
 
             stats = cursor.fetchone()
@@ -555,7 +555,7 @@ async def get_feedback_summary():
                     COUNT(*) as count,
                     AVG(quality_score) as avg_quality,
                     AVG(CASE WHEN is_correct THEN 1.0 ELSE 0.0 END) as correctness_rate
-                FROM response_feedback
+                FROM routing_feedback
                 WHERE selected_model IS NOT NULL
                 GROUP BY selected_model
                 ORDER BY count DESC
