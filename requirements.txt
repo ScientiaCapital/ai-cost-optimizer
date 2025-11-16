@@ -31,8 +31,18 @@ locust>=2.15.0
 pytest-benchmark>=4.0.0
 
 # Database migrations
+SQLAlchemy>=2.0.0
 alembic>=1.12.0
 psycopg2-binary>=2.9.9
+asyncpg>=0.29.0
 
 # Scheduled jobs
 APScheduler>=3.10.4
+
+# Caching
+redis>=5.0.0
+hiredis>=2.2.0
+
+# Statistical analysis (A/B testing)
+scipy>=1.6.0
+numpy>=1.16.5
