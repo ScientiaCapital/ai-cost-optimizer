@@ -18,37 +18,10 @@ depends_on = None
 def upgrade():
     """Create feedback and model performance tables."""
 
-    # Create response_feedback table
-    op.create_table(
-        'response_feedback',
-        sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('request_id', sa.Text(), nullable=False),
-        sa.Column('timestamp', sa.DateTime(), nullable=False),
-
-        # User ratings
-        sa.Column('quality_score', sa.Integer(), nullable=False),
-        sa.Column('is_correct', sa.Boolean(), nullable=True),
-        sa.Column('is_helpful', sa.Boolean(), nullable=True),
-
-        # Context for learning
-        sa.Column('prompt_pattern', sa.Text(), nullable=True),
-        sa.Column('selected_provider', sa.Text(), nullable=True),
-        sa.Column('selected_model', sa.Text(), nullable=True),
-        sa.Column('complexity_score', sa.Float(), nullable=True),
-
-        # Metadata
-        sa.Column('user_id', sa.Text(), nullable=True),
-        sa.Column('session_id', sa.Text(), nullable=True),
-        sa.Column('comment', sa.Text(), nullable=True),
-
-        # Foreign key constraint
-        sa.ForeignKeyConstraint(['request_id'], ['routing_metrics.request_id']),
-    )
-
-    # Create indexes
-    op.create_index('idx_feedback_pattern', 'response_feedback', ['prompt_pattern'])
-    op.create_index('idx_feedback_model', 'response_feedback', ['selected_model'])
-    op.create_index('idx_feedback_timestamp', 'response_feedback', ['timestamp'])
+    # response_feedback table already exists from initial migration
+    # Add new columns to existing table if needed
+    # Note: The initial migration created response_feedback with different structure
+    # This migration adds the model_performance_history table only
 
     # Create model_performance_history table
     op.create_table(
@@ -80,7 +53,4 @@ def upgrade():
 def downgrade():
     """Drop feedback tables."""
     op.drop_table('model_performance_history')
-    op.drop_index('idx_feedback_timestamp', 'response_feedback')
-    op.drop_index('idx_feedback_model', 'response_feedback')
-    op.drop_index('idx_feedback_pattern', 'response_feedback')
-    op.drop_table('response_feedback')
+    # response_feedback table is managed by initial migration, don't drop it here

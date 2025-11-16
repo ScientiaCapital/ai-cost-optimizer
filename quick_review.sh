@@ -1,0 +1,12 @@
+#!/bin/bash
+echo "🔍 Code Review Helper"
+echo "===================="
+echo ""
+echo "Ask Claude to use: superpowers:code-reviewer"
+echo ""
+echo "This will review your recent changes against:"
+echo "  - Project coding standards"
+echo "  - Best practices"
+echo "  - Common issues"
+echo ""
+echo "Just say: 'Use superpowers:code-reviewer to review recent changes'"
