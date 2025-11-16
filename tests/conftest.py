@@ -28,22 +28,35 @@ def setup_test_database():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Create routing_metrics table (needed for foreign key)
+    # Create routing_metrics table (production schema + feedback loop columns)
+    # This table supports BOTH Phase 2 metrics (app/database.py) AND feedback loop (feedback_store.py)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS routing_metrics (
-            id INTEGER PRIMARY KEY,
-            request_id TEXT UNIQUE NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            prompt_hash TEXT NOT NULL,
+            strategy_used TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            auto_route INTEGER NOT NULL,
+            estimated_cost REAL,
+            complexity_score REAL,
+            pattern TEXT,
+            fallback_used INTEGER DEFAULT 0,
+            metadata TEXT,
+            request_id TEXT UNIQUE,
             selected_provider TEXT,
             selected_model TEXT,
-            pattern_detected TEXT,
-            complexity_score REAL
+            pattern_detected TEXT
         )
     """)
 
-    # Create response_feedback table
+    # Create response_feedback table (matches feedback_store.py schema)
+    # This is for production routing feedback, NOT cache quality feedback
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS response_feedback (
-            id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             request_id TEXT NOT NULL,
             timestamp DATETIME NOT NULL,
             quality_score INTEGER NOT NULL,
