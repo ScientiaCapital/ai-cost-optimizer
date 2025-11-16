@@ -1,0 +1,17 @@
+services:
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: optimizer-test-db
+    environment:
+      POSTGRES_DB: test_optimizer
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test_optimizer"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    tmpfs:
+      - /var/lib/postgresql/data

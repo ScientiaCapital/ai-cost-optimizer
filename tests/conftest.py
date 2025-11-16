@@ -9,7 +9,17 @@ from app.main import app
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_database():
-    """Setup test database URL for tests."""
+    """Setup test database URL for tests.
+
+    This fixture only sets up SQLite for non-PostgreSQL tests.
+    PostgreSQL tests should use TEST_DATABASE_URL environment variable
+    and manage their own database state via Alembic migrations.
+    """
+    # Skip if TEST_DATABASE_URL is set (indicates PostgreSQL tests)
+    if os.getenv('TEST_DATABASE_URL'):
+        yield
+        return
+
     # Use SQLite for tests (simpler, faster)
     db_path = './test_feedback.db'
     os.environ['DATABASE_URL'] = f'sqlite:///{db_path}'

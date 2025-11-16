@@ -1,11 +1,48 @@
 """End-to-end integration tests for feedback loop."""
 import pytest
 import time
+from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from app.main import app
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def mock_provider_apis():
+    """Mock all provider API calls to avoid authentication errors in tests."""
+    with patch('app.providers.ClaudeProvider.complete', new_callable=AsyncMock) as mock_claude, \
+         patch('app.providers.GeminiProvider.complete', new_callable=AsyncMock) as mock_gemini, \
+         patch('app.providers.OpenRouterProvider.complete', new_callable=AsyncMock) as mock_openrouter:
+
+        # Configure mock responses - complete() returns (text, tokens_in, tokens_out, cost)
+        mock_claude.return_value = (
+            'This is a mocked Claude response for testing.',
+            10,  # tokens_in
+            20,  # tokens_out
+            0.00001  # cost
+        )
+
+        mock_gemini.return_value = (
+            'This is a mocked Gemini response for testing.',
+            10,
+            20,
+            0.00001
+        )
+
+        mock_openrouter.return_value = (
+            'This is a mocked OpenRouter response for testing.',
+            10,
+            20,
+            0.00001
+        )
+
+        yield {
+            'claude': mock_claude,
+            'gemini': mock_gemini,
+            'openrouter': mock_openrouter
+        }
 
 
 def test_complete_feedback_loop_flow():

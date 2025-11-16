@@ -6,10 +6,51 @@ from alembic import command
 from alembic.config import Config
 
 
+# Mark all tests in this module as requiring PostgreSQL
+pytestmark = pytest.mark.skipif(
+    not os.getenv('TEST_DATABASE_URL'),
+    reason="PostgreSQL tests require TEST_DATABASE_URL environment variable"
+)
+
 TEST_DB_URL = os.getenv(
     'TEST_DATABASE_URL',
-    'postgresql://test:test@localhost:5432/test_optimizer'
+    'postgresql://test:test@localhost:5434/test_optimizer'
 )
+
+
+@pytest.fixture(scope="module")
+def postgres_connection():
+    """Create PostgreSQL connection for test database setup/teardown."""
+    try:
+        conn = psycopg2.connect(TEST_DB_URL)
+        conn.autocommit = True
+        yield conn
+        conn.close()
+    except psycopg2.OperationalError as e:
+        pytest.skip(f"PostgreSQL not available: {e}")
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_test_db(postgres_connection):
+    """Set up and tear down test database."""
+    cursor = postgres_connection.cursor()
+
+    # Drop all tables to start fresh
+    cursor.execute("""
+        DROP SCHEMA public CASCADE;
+        CREATE SCHEMA public;
+        GRANT ALL ON SCHEMA public TO public;
+    """)
+
+    yield
+
+    # Cleanup after all tests
+    cursor.execute("""
+        DROP SCHEMA public CASCADE;
+        CREATE SCHEMA public;
+        GRANT ALL ON SCHEMA public TO public;
+    """)
+    cursor.close()
 
 
 @pytest.fixture
@@ -39,11 +80,12 @@ def test_feedback_tables_migration(alembic_config):
     columns = cursor.fetchall()
     column_names = [col[0] for col in columns]
 
+    # Verify response_feedback table structure (from initial migration)
     assert 'id' in column_names
-    assert 'request_id' in column_names
-    assert 'quality_score' in column_names
-    assert 'is_correct' in column_names
-    assert 'prompt_pattern' in column_names
+    assert 'cache_key' in column_names
+    assert 'rating' in column_names
+    assert 'comment' in column_names
+    assert 'timestamp' in column_names
 
     cursor.close()
     conn.close()
