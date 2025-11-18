@@ -1,10 +1,12 @@
 """FastAPI service for AI Cost Optimizer."""
+import asyncio
 import os
 import logging
 import sqlite3
-from typing import Optional
+from typing import Optional, List
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -21,6 +23,9 @@ from app.models.admin import (
 from app.learning.feedback_trainer import FeedbackTrainer
 from app.database.postgres import get_connection, get_cursor
 from app.scheduler import RetrainingScheduler
+from app.cache import create_redis_cache
+from app.routers import experiments
+from app.experiments.tracker import ExperimentTracker
 
 # Load environment variables
 load_dotenv()
@@ -42,17 +47,48 @@ if os.getenv('ENABLE_SCHEDULER', 'true').lower() == 'true':
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan events."""
-    # Startup: Start scheduler
+    # Startup
+    logger.info("🚀 Starting AI Cost Optimizer with Supabase + Semantic Caching...")
+
+    # Initialize Supabase client (singleton)
+    from app.database import get_supabase_client
+    supabase_client = get_supabase_client()
+    logger.info("✅ Supabase client initialized")
+
+    # Warm up embedding generator (load ML model)
+    from app.embeddings import get_embedding_generator
+    embeddings = get_embedding_generator()
+    embeddings.warmup()  # Pre-load model to avoid cold start
+    logger.info(f"✅ Embedding model loaded (dim={embeddings.get_embedding_dimension()})")
+
+    # Start scheduler
     if scheduler:
         scheduler.start()
-        logger.info("Retraining scheduler started")
+        logger.info("✅ Retraining scheduler started")
+
+    logger.info("🎉 AI Cost Optimizer ready!")
 
     yield
 
-    # Shutdown: Stop scheduler
+    # Shutdown
+    logger.info("🛑 Shutting down AI Cost Optimizer...")
+
+    # Stop scheduler
     if scheduler:
         scheduler.stop()
-        logger.info("Retraining scheduler stopped")
+        logger.info("✅ Retraining scheduler stopped")
+
+    # Close Supabase client
+    from app.database import close_supabase_client
+    await close_supabase_client()
+    logger.info("✅ Supabase client closed")
+
+    # Release embedding model from memory
+    from app.embeddings import close_embedding_generator
+    close_embedding_generator()
+    logger.info("✅ Embedding model released")
+
+    logger.info("👋 Shutdown complete")
 
 
 # Initialize FastAPI app
@@ -79,16 +115,94 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include routers
+app.include_router(experiments.router)
+
 # Initialize global components
 providers = init_providers()
 routing_service = RoutingService(
-    db_path=os.getenv("DATABASE_PATH", "optimizer.db"),
-    providers=providers
+    providers=providers,
+    user_id=None,  # Admin mode (no RLS filtering) for backward compatibility
+    db_path=os.getenv("DATABASE_PATH", "optimizer.db")  # Legacy parameter
 )
+experiment_tracker = ExperimentTracker(db_path=os.getenv("DATABASE_PATH", "optimizer.db"))
 feedback_store = FeedbackStore()
 feedback_trainer = FeedbackTrainer()
 
+# Initialize Redis cache for metrics endpoint (Task 4)
+metrics_cache = create_redis_cache()
+
+# Cache hit/miss statistics for monitoring (with thread-safe lock)
+metrics_cache_stats = {
+    "hits": 0,
+    "misses": 0,
+    "errors": 0
+}
+metrics_cache_stats_lock = asyncio.Lock()
+
 logger.info(f"AI Cost Optimizer initialized with providers: {list(providers.keys())}")
+logger.info(f"Metrics cache initialized: Redis available = {metrics_cache.ping()}")
+
+
+# ============================================================================
+# WEBSOCKET CONNECTION MANAGER
+# ============================================================================
+
+class ConnectionManager:
+    """
+    Manages WebSocket connections for real-time metrics broadcasting.
+
+    Handles multiple concurrent connections and broadcasts updates
+    to all connected clients every 5 seconds.
+
+    Features:
+    - Multiple concurrent client support
+    - Automatic cleanup of disconnected clients
+    - Graceful error handling
+    - Per-client and broadcast messaging
+    """
+
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        """Accept and register new WebSocket connection"""
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info(f"WebSocket connected. Total connections: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        """Remove disconnected WebSocket"""
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logger.info(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
+
+    async def broadcast(self, message: dict):
+        """Broadcast message to all connected clients"""
+        disconnected = []
+
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                logger.warning(f"Failed to send to client: {e}")
+                disconnected.append(connection)
+
+        # Clean up disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+
+    async def send_personal(self, message: dict, websocket: WebSocket):
+        """Send message to specific client"""
+        try:
+            await websocket.send_json(message)
+        except Exception as e:
+            logger.error(f"Failed to send personal message: {e}")
+            self.disconnect(websocket)
+
+
+# Initialize connection manager
+manager = ConnectionManager()
 
 
 # Request/Response models
@@ -98,6 +212,7 @@ class CompleteRequest(BaseModel):
     max_tokens: Optional[int] = Field(1000, ge=1, le=4000, description="Maximum response tokens")
     auto_route: bool = Field(False, description="Enable intelligent routing (hybrid strategy)")
     tokenizer_id: Optional[str] = Field(None, description="Optional HF repo id for tokenization metrics (e.g., 'UW/OLMo2-8B-SuperBPE-t180k')")
+    user_id: Optional[str] = Field(None, description="User ID for A/B testing experiments")
 
 
 class CompleteResponse(BaseModel):
@@ -123,6 +238,9 @@ class CompleteResponse(BaseModel):
     tokenizer_tokens_in: Optional[int] = None
     tokenizer_bytes_per_token: Optional[float] = None
     tokenizer_tokens_per_byte: Optional[float] = None
+    # A/B Testing Experiment Fields
+    experiment_id: Optional[int] = None
+    assigned_strategy: Optional[str] = None
 
 
 class StatsResponse(BaseModel):
@@ -166,29 +284,105 @@ async def health_check():
 async def complete_prompt(request: CompleteRequest):
     """
     Route and complete a prompt using optimal provider with caching.
+    NOW WITH A/B TESTING INTEGRATION.
 
     This is the main endpoint that:
-    1. Checks response cache for instant results
-    2. Routes using RoutingEngine (complexity or hybrid based on auto_route)
-    3. Executes completion with selected provider
-    4. Stores response in cache
-    5. Tracks cost and routing metrics
+    1. Checks for active A/B experiments (if user_id provided)
+    2. Assigns user to control/test group and overrides routing strategy
+    3. Checks response cache for instant results
+    4. Routes using RoutingEngine (complexity or hybrid based on auto_route)
+    5. Executes completion with selected provider
+    6. Stores response in cache
+    7. Records experiment result (if in experiment)
+    8. Tracks cost and routing metrics
+    9. Invalidates metrics cache on new data
 
     Args:
-        request: CompleteRequest with prompt, max_tokens, and auto_route
+        request: CompleteRequest with prompt, max_tokens, auto_route, and optional user_id
 
     Returns:
-        CompleteResponse with response text, metadata, and cost
+        CompleteResponse with response text, metadata, cost, and experiment info
 
     Raises:
         HTTPException: If routing or completion fails
     """
+    # A/B Testing Integration: Initialize experiment variables
+    experiment_id = None
+    assigned_strategy = None
+    original_auto_route = request.auto_route  # Save original for logging
+
+    # 1. Check for active experiments if user_id provided
+    if request.user_id:
+        try:
+            active_experiments = experiment_tracker.get_active_experiments()
+
+            if active_experiments:
+                # Use first active experiment
+                experiment = active_experiments[0]
+                experiment_id = experiment['id']
+
+                # 2. Assign user to control/test group (deterministic)
+                assigned_strategy = experiment_tracker.assign_user(experiment_id, request.user_id)
+
+                # 3. Override auto_route based on assigned strategy
+                # Map experiment strategy to routing configuration
+                strategy_map = {
+                    'complexity': False,   # Complexity-based routing (auto_route=False)
+                    'learning': True,      # Learning-based routing (auto_route=True)
+                    'hybrid': True         # Hybrid routing (auto_route=True)
+                }
+                request.auto_route = strategy_map.get(assigned_strategy, request.auto_route)
+
+                logger.info(
+                    f"A/B Test: User {request.user_id} assigned to '{assigned_strategy}' "
+                    f"(experiment {experiment_id}). Routing: auto_route={request.auto_route}"
+                )
+        except Exception as e:
+            logger.error(f"Experiment assignment failed: {e}", exc_info=True)
+            # Continue with normal routing if experiment fails
+            experiment_id = None
+            assigned_strategy = None
+
     try:
+        # Execute routing with potentially overridden auto_route
         result = await routing_service.route_and_complete(
             prompt=request.prompt,
             auto_route=request.auto_route,
             max_tokens=request.max_tokens
         )
+
+        # 4. Record experiment result if in experiment
+        if experiment_id and request.user_id and assigned_strategy:
+            try:
+                # Extract latency from routing metadata
+                latency_ms = result.get("routing_metadata", {}).get("latency_ms", 0.0)
+
+                experiment_tracker.record_result(
+                    experiment_id=experiment_id,
+                    user_id=request.user_id,
+                    strategy_assigned=assigned_strategy,
+                    latency_ms=latency_ms,
+                    cost_usd=result["cost"],
+                    quality_score=None,  # Will be updated via feedback API
+                    provider=result["provider"],
+                    model=result["model"]
+                )
+
+                logger.info(
+                    f"A/B Test: Recorded result for user {request.user_id} "
+                    f"(experiment {experiment_id}, strategy '{assigned_strategy}')"
+                )
+            except Exception as e:
+                logger.error(f"Failed to record experiment result: {e}", exc_info=True)
+                # Don't fail the request if recording fails
+
+        # Invalidate metrics cache when new routing decision is made
+        # This ensures fresh metrics on next /routing/metrics call
+        try:
+            metrics_cache.delete("metrics:latest")
+            logger.debug("Metrics cache invalidated after new routing decision")
+        except Exception as e:
+            logger.error(f"Metrics cache invalidation failed: {e}")
 
         # Optional tokenizer metrics
         tokenizer_id = request.tokenizer_id
@@ -227,6 +421,9 @@ async def complete_prompt(request: CompleteRequest):
             tokenizer_tokens_in=tokenizer_tokens_in,
             tokenizer_bytes_per_token=tokenizer_bytes_per_token,
             tokenizer_tokens_per_byte=tokenizer_tokens_per_byte,
+            # A/B Testing Experiment Fields
+            experiment_id=experiment_id,
+            assigned_strategy=assigned_strategy,
         )
 
     except Exception as e:
@@ -307,7 +504,11 @@ async def get_recommendation(prompt: str):
 @app.get("/routing/metrics")
 async def get_routing_metrics():
     """
-    Get auto-routing analytics for monitoring and ROI tracking.
+    Get auto-routing analytics for monitoring and ROI tracking with Redis caching.
+
+    Cache hierarchy:
+    1. Redis (hot, <10ms) - 30-second TTL
+    2. PostgreSQL/SQLite (warm, ~50ms) - query on cache miss
 
     Returns strategy performance, decision counts, and confidence distribution
     from the routing engine metrics collector.
@@ -315,8 +516,40 @@ async def get_routing_metrics():
     Returns:
         Dict with strategy_performance, total_decisions, confidence_distribution, provider_usage
     """
+    cache_key = "metrics:latest"
+
     try:
-        return routing_service.get_routing_metrics()
+        # Try Redis cache first
+        cached_data = metrics_cache.get(cache_key)
+        if cached_data:
+            async with metrics_cache_stats_lock:
+                metrics_cache_stats["hits"] += 1
+            logger.info("Metrics cache HIT")
+            return cached_data
+
+        logger.info("Metrics cache MISS, querying database")
+        async with metrics_cache_stats_lock:
+            metrics_cache_stats["misses"] += 1
+
+    except Exception as e:
+        logger.warning(f"Cache GET failed: {e}, falling back to database")
+        async with metrics_cache_stats_lock:
+            metrics_cache_stats["errors"] += 1
+
+    # Cache miss or error - query database
+    try:
+        db_metrics = await routing_service.get_routing_metrics(days=7)
+
+        # Populate cache for next request (30-second TTL)
+        try:
+            metrics_cache.set(cache_key, db_metrics, ttl=30)
+            logger.info("Metrics cached for 30 seconds")
+        except Exception as e:
+            logger.error(f"Cache SET failed: {e}")
+            async with metrics_cache_stats_lock:
+                metrics_cache_stats["errors"] += 1
+
+        return db_metrics
 
     except Exception as e:
         logger.error(f"Error fetching routing metrics: {str(e)}")
@@ -377,6 +610,45 @@ async def get_cache_stats():
     except Exception as e:
         logger.error(f"Error fetching cache stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/metrics-cache/stats")
+async def get_metrics_cache_stats():
+    """
+    Get metrics cache performance statistics (Redis caching for /routing/metrics).
+
+    This endpoint tracks the performance of the Redis cache layer added in Task 4
+    to optimize the /routing/metrics endpoint from ~50ms to <10ms.
+
+    Returns:
+        Dict with:
+        - hits: Number of cache hits
+        - misses: Number of cache misses
+        - errors: Number of cache errors (with fallback to DB)
+        - hit_rate_percent: Cache hit rate percentage
+        - total_requests: Total requests to metrics endpoint
+        - redis_available: Whether Redis connection is healthy
+    """
+    # Capture stats snapshot while holding lock (minimal lock time)
+    async with metrics_cache_stats_lock:
+        total = metrics_cache_stats["hits"] + metrics_cache_stats["misses"]
+        hit_rate = (metrics_cache_stats["hits"] / total * 100) if total > 0 else 0.0
+
+        stats_snapshot = {
+            "hits": metrics_cache_stats["hits"],
+            "misses": metrics_cache_stats["misses"],
+            "errors": metrics_cache_stats["errors"],
+            "hit_rate_percent": round(hit_rate, 2),
+            "total_requests": total,
+        }
+
+    # Perform I/O AFTER releasing lock in non-blocking manner
+    loop = asyncio.get_event_loop()
+    stats_snapshot["redis_available"] = await loop.run_in_executor(
+        None, metrics_cache.ping
+    )
+
+    return stats_snapshot
 
 
 @app.post("/feedback", response_model=FeedbackResponse)
@@ -698,6 +970,95 @@ async def get_performance_trends(pattern: str):
                 pattern=pattern,
                 trends=[]
             )
+
+
+# ============================================================================
+# WEBSOCKET ENDPOINTS
+# ============================================================================
+
+async def get_latest_metrics_for_websocket() -> dict:
+    """
+    Get latest metrics from Redis cache for WebSocket streaming.
+
+    Returns cached metrics with fallback to database if cache miss.
+    Adds timestamp to all responses for client-side tracking.
+
+    Returns:
+        Dict with metrics data and ISO timestamp
+    """
+    try:
+        # Get from Redis cache (sub-10ms)
+        cached_metrics = metrics_cache.get("metrics:latest")
+
+        if cached_metrics:
+            # Ensure timestamp is present
+            if "timestamp" not in cached_metrics:
+                cached_metrics["timestamp"] = datetime.now().isoformat()
+            return cached_metrics
+
+        # Cache miss - get from database
+        logger.warning("WebSocket cache miss, querying database")
+        metrics = await routing_service.get_routing_metrics(days=7)
+
+        # Add timestamp
+        metrics["timestamp"] = datetime.now().isoformat()
+
+        # Populate cache for next request
+        metrics_cache.set("metrics:latest", metrics, ttl=30)
+
+        return metrics
+
+    except Exception as e:
+        logger.error(f"Failed to get metrics for WebSocket: {e}")
+        return {
+            "error": "Failed to fetch metrics",
+            "timestamp": datetime.now().isoformat()
+        }
+
+
+@app.websocket("/ws/metrics")
+async def websocket_metrics_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time metrics streaming.
+
+    Broadcasts metrics updates every 5 seconds to connected clients.
+    Uses Redis cache as data source for sub-10ms performance.
+
+    Connection flow:
+    1. Client connects
+    2. Server sends immediate metrics snapshot
+    3. Server sends updates every 5 seconds
+    4. Graceful disconnect handling
+
+    Features:
+    - Immediate metrics on connect
+    - 5-second periodic updates
+    - Multiple concurrent connections
+    - Redis cache integration
+    - Automatic cleanup on disconnect
+    """
+    await manager.connect(websocket)
+
+    try:
+        # Send immediate metrics on connect
+        initial_metrics = await get_latest_metrics_for_websocket()
+        await manager.send_personal(initial_metrics, websocket)
+
+        # Keep connection alive and send periodic updates
+        while True:
+            # Wait 5 seconds
+            await asyncio.sleep(5)
+
+            # Send latest metrics to this client
+            metrics = await get_latest_metrics_for_websocket()
+            await manager.send_personal(metrics, websocket)
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        logger.info("Client disconnected normally")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        manager.disconnect(websocket)
 
 
 # Run the application
