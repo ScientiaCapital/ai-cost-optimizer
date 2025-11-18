@@ -58,7 +58,8 @@ class RoutingEngine:
         self,
         prompt: str,
         auto_route: bool = False,
-        context: Optional[RoutingContext] = None
+        context: Optional[RoutingContext] = None,
+        request_id: str = None
     ) -> RoutingDecision:
         """Route a prompt to the optimal provider/model.
 
@@ -67,6 +68,7 @@ class RoutingEngine:
             auto_route: If True, use intelligent hybrid routing (learning + complexity).
                        If False, use simple complexity-based routing (default, safe).
             context: Optional routing context with constraints
+            request_id: Unique request identifier for FK relationships (optional)
 
         Returns:
             RoutingDecision with provider, model, and metadata
@@ -96,7 +98,7 @@ class RoutingEngine:
 
             # Track metrics if enabled
             if self.metrics:
-                self.metrics.track_decision(prompt, decision, auto_route)
+                self.metrics.track_decision(prompt, decision, auto_route, request_id)
 
             return decision
 
@@ -111,7 +113,7 @@ class RoutingEngine:
 
             # Track metrics for fallback if enabled
             if self.metrics:
-                self.metrics.track_decision(prompt, fallback_decision, auto_route)
+                self.metrics.track_decision(prompt, fallback_decision, auto_route, request_id)
 
             return fallback_decision
 

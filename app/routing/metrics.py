@@ -41,7 +41,8 @@ class MetricsCollector:
         self,
         prompt: str,
         decision: RoutingDecision,
-        auto_route: bool
+        auto_route: bool,
+        request_id: str = None
     ) -> None:
         """Track a routing decision to the database.
 
@@ -49,6 +50,7 @@ class MetricsCollector:
             prompt: The original prompt
             decision: The routing decision made
             auto_route: Whether auto_route was enabled
+            request_id: Unique request identifier for FK relationships (optional)
         """
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()
         timestamp = datetime.now().isoformat()
@@ -68,8 +70,9 @@ class MetricsCollector:
                 INSERT INTO routing_metrics (
                     timestamp, prompt_hash, strategy_used, provider, model,
                     confidence, auto_route, estimated_cost, complexity_score,
-                    pattern, fallback_used, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    pattern, fallback_used, metadata, request_id, selected_provider,
+                    selected_model, pattern_detected
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 timestamp,
                 prompt_hash,
@@ -82,11 +85,15 @@ class MetricsCollector:
                 complexity_score,
                 pattern,
                 1 if decision.fallback_used else 0,
-                json.dumps(decision.metadata)
+                json.dumps(decision.metadata),
+                request_id,
+                decision.provider,
+                decision.model,
+                pattern
             ))
 
             conn.commit()
-            logger.debug(f"Tracked routing decision: {decision.provider}/{decision.model}")
+            logger.debug(f"Tracked routing decision: {decision.provider}/{decision.model} (request_id={request_id})")
 
         except sqlite3.Error as e:
             logger.error(f"Failed to track metrics: {e}")
@@ -240,6 +247,100 @@ class MetricsCollector:
         except sqlite3.Error as e:
             logger.error(f"Failed to aggregate by confidence: {e}")
             return []
+
+        finally:
+            if conn:
+                conn.close()
+
+    def get_metrics(self, days: int = 7) -> Dict[str, Any]:
+        """Get comprehensive routing metrics for analysis.
+
+        This is the main metrics endpoint that aggregates all routing data
+        for monitoring and ROI tracking.
+
+        Args:
+            days: Number of days to analyze (default: 7)
+
+        Returns:
+            Dict with strategy_performance, total_decisions, confidence_distribution,
+            provider_usage, cost_savings
+        """
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Total decisions count
+            cursor.execute("""
+                SELECT COUNT(*) as total
+                FROM routing_metrics
+                WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' days')
+            """, (days,))
+            total_decisions = cursor.fetchone()['total']
+
+            # Strategy performance
+            strategy_perf = {}
+            for strategy in self.aggregate_by_strategy(days):
+                strategy_perf[strategy['strategy']] = {
+                    "count": strategy['count'],
+                    "avg_cost": round(strategy['avg_cost'], 6) if strategy['avg_cost'] else 0,
+                    "high_confidence_pct": round(strategy['high_confidence_pct'], 2)
+                }
+
+            # Confidence distribution
+            conf_dist = {"high": 0, "medium": 0, "low": 0}
+            for conf in self.aggregate_by_confidence(days):
+                conf_dist[conf['confidence']] = conf['count']
+
+            # Provider usage
+            cursor.execute("""
+                SELECT
+                    provider,
+                    COUNT(*) as count,
+                    AVG(estimated_cost) as avg_cost
+                FROM routing_metrics
+                WHERE datetime(timestamp) >= datetime('now', '-' || ? || ' days')
+                GROUP BY provider
+                ORDER BY count DESC
+            """, (days,))
+
+            provider_usage = {}
+            for row in cursor.fetchall():
+                provider_usage[row['provider']] = {
+                    "count": row['count'],
+                    "avg_cost": round(row['avg_cost'], 6) if row['avg_cost'] else 0
+                }
+
+            # Cost savings
+            savings = self.get_cost_savings(days)
+
+            return {
+                "total_decisions": total_decisions,
+                "strategy_performance": strategy_perf,
+                "confidence_distribution": conf_dist,
+                "provider_usage": provider_usage,
+                "cost_savings": savings,
+                "period_days": days,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get metrics: {e}")
+            return {
+                "total_decisions": 0,
+                "strategy_performance": {},
+                "confidence_distribution": {"high": 0, "medium": 0, "low": 0},
+                "provider_usage": {},
+                "cost_savings": {
+                    "total_saved": 0.0,
+                    "percent_saved": 0.0,
+                    "intelligent_cost": 0.0,
+                    "baseline_cost": 0.0
+                },
+                "period_days": days,
+                "error": str(e)
+            }
 
         finally:
             if conn:

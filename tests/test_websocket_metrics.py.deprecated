@@ -1,0 +1,162 @@
+"""
+Test suite for WebSocket metrics streaming endpoint.
+
+Following TDD approach:
+1. Write tests first (RED)
+2. Implement WebSocket endpoint (GREEN)
+3. Refactor for optimization
+
+Tests cover:
+- WebSocket endpoint accessibility
+- Immediate metrics on connect
+- Periodic 5-second updates
+- Multiple concurrent connections
+- Graceful disconnect handling
+- Redis cache integration
+- Error handling
+"""
+
+import pytest
+import asyncio
+import json
+from fastapi.testclient import TestClient
+from unittest.mock import patch, MagicMock
+from app.main import app
+from datetime import datetime
+
+
+class TestWebSocketMetrics:
+    """Test suite for WebSocket metrics streaming"""
+
+    @pytest.fixture
+    def client(self):
+        """FastAPI test client"""
+        return TestClient(app)
+
+    def test_websocket_endpoint_exists(self, client):
+        """Test that WebSocket endpoint is accessible"""
+        with client.websocket_connect("/ws/metrics") as websocket:
+            # Connection successful
+            assert websocket is not None
+
+    def test_websocket_receives_initial_metrics(self, client):
+        """Test that client receives metrics immediately on connect"""
+        with client.websocket_connect("/ws/metrics") as websocket:
+            # Should receive metrics within 1 second
+            data = websocket.receive_json()
+
+            # Verify metrics structure
+            assert data is not None
+            assert "timestamp" in data
+            # Should have either metrics data or error
+            assert "total_decisions" in data or "error" in data
+
+    def test_websocket_periodic_updates_every_5_seconds(self, client):
+        """Test that client receives updates every 5 seconds"""
+        with client.websocket_connect("/ws/metrics") as websocket:
+            # Receive first message
+            first = websocket.receive_json()
+            first_time = first.get("timestamp")
+            assert first_time is not None
+
+            # Receive second message (should be ~5 seconds later)
+            # Note: In test mode this might be faster, but structure should be valid
+            second = websocket.receive_json()
+            second_time = second.get("timestamp")
+
+            # Verify we got two distinct messages
+            assert second is not None
+            assert second_time is not None
+
+    def test_websocket_multiple_concurrent_connections(self, client):
+        """Test that multiple clients can connect simultaneously"""
+        with client.websocket_connect("/ws/metrics") as ws1, \
+             client.websocket_connect("/ws/metrics") as ws2:
+
+            # Both should receive data
+            data1 = ws1.receive_json()
+            data2 = ws2.receive_json()
+
+            assert data1 is not None
+            assert data2 is not None
+            assert "timestamp" in data1
+            assert "timestamp" in data2
+
+    def test_websocket_graceful_disconnect(self, client):
+        """Test that client can disconnect gracefully"""
+        with client.websocket_connect("/ws/metrics") as websocket:
+            data = websocket.receive_json()
+            assert data is not None
+            # Close connection explicitly
+            websocket.close()
+
+        # Should not raise exception - test passes if we get here
+
+    @patch('app.main.metrics_cache')
+    def test_websocket_uses_redis_cache(self, mock_cache, client):
+        """Test that WebSocket uses Redis cache, not direct DB queries"""
+        # Mock cache to return test metrics
+        mock_cache.get.return_value = {
+            "total_decisions": 100,
+            "avg_confidence": 0.85,
+            "timestamp": "2025-11-16T12:00:00Z"
+        }
+
+        with client.websocket_connect("/ws/metrics") as websocket:
+            data = websocket.receive_json()
+
+            # Verify Redis cache was called
+            assert mock_cache.get.called
+            assert data["total_decisions"] == 100
+            assert data["avg_confidence"] == 0.85
+
+    def test_websocket_error_handling_on_invalid_data(self, client):
+        """Test graceful error handling when cache returns invalid data"""
+        # Connection should not crash even with cache issues
+        with client.websocket_connect("/ws/metrics") as websocket:
+            data = websocket.receive_json()
+            # Should receive something (either metrics or error message)
+            assert data is not None
+            assert "timestamp" in data
+
+    def test_websocket_connection_manager_tracking(self, client):
+        """Test that connection manager tracks active connections"""
+        # Connect first client
+        with client.websocket_connect("/ws/metrics") as ws1:
+            data1 = ws1.receive_json()
+            assert data1 is not None
+
+            # Connect second client while first is still active
+            with client.websocket_connect("/ws/metrics") as ws2:
+                data2 = ws2.receive_json()
+                assert data2 is not None
+
+            # Second client disconnected, first still active
+            data3 = ws1.receive_json()
+            assert data3 is not None
+
+    def test_websocket_sends_valid_json(self, client):
+        """Test that all WebSocket messages are valid JSON"""
+        with client.websocket_connect("/ws/metrics") as websocket:
+            data = websocket.receive_json()
+
+            # Should be valid JSON (receive_json would fail otherwise)
+            assert isinstance(data, dict)
+
+            # Should have required fields
+            assert "timestamp" in data
+
+    def test_websocket_timestamp_format(self, client):
+        """Test that timestamp is in ISO format"""
+        with client.websocket_connect("/ws/metrics") as websocket:
+            data = websocket.receive_json()
+
+            # Verify timestamp is valid ISO format
+            timestamp = data.get("timestamp")
+            assert timestamp is not None
+
+            # Should be parseable as ISO datetime
+            try:
+                datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                pytest.fail(f"Invalid timestamp format: {timestamp}")

@@ -4,12 +4,9 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-client = TestClient(app)
-
-
-def test_feedback_summary_endpoint():
+def test_feedback_summary_endpoint(authenticated_client, auth_headers):
     """Test /admin/feedback/summary returns stats."""
-    response = client.get("/admin/feedback/summary")
+    response = authenticated_client.get("/admin/feedback/summary", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -20,9 +17,9 @@ def test_feedback_summary_endpoint():
     assert isinstance(data["models"], list)
 
 
-def test_learning_status_endpoint():
+def test_learning_status_endpoint(authenticated_client, auth_headers):
     """Test /admin/learning/status returns status."""
-    response = client.get("/admin/learning/status")
+    response = authenticated_client.get("/admin/learning/status", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -34,9 +31,9 @@ def test_learning_status_endpoint():
     assert "low" in data["confidence_distribution"]
 
 
-def test_retrain_dry_run_endpoint():
+def test_retrain_dry_run_endpoint(authenticated_client, auth_headers):
     """Test /admin/learning/retrain?dry_run=true."""
-    response = client.post("/admin/learning/retrain?dry_run=true")
+    response = authenticated_client.post("/admin/learning/retrain?dry_run=true", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -46,9 +43,9 @@ def test_retrain_dry_run_endpoint():
     assert data["dry_run"] is True
 
 
-def test_retrain_actual_endpoint():
+def test_retrain_actual_endpoint(authenticated_client, auth_headers):
     """Test /admin/learning/retrain without dry_run."""
-    response = client.post("/admin/learning/retrain?dry_run=false")
+    response = authenticated_client.post("/admin/learning/retrain?dry_run=false", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -57,9 +54,9 @@ def test_retrain_actual_endpoint():
     assert data["dry_run"] is False
 
 
-def test_performance_trends_endpoint():
+def test_performance_trends_endpoint(authenticated_client, auth_headers):
     """Test /admin/performance/trends."""
-    response = client.get("/admin/performance/trends?pattern=code")
+    response = authenticated_client.get("/admin/performance/trends?pattern=code", headers=auth_headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -67,3 +64,14 @@ def test_performance_trends_endpoint():
     assert "pattern" in data
     assert "trends" in data
     assert isinstance(data["trends"], list)
+
+
+def test_admin_endpoints_require_auth():
+    """Test that admin endpoints return 403 without authentication."""
+    client = TestClient(app)
+
+    # All admin endpoints should require authentication
+    assert client.get("/admin/feedback/summary").status_code == 403
+    assert client.get("/admin/learning/status").status_code == 403
+    assert client.post("/admin/learning/retrain").status_code == 403
+    assert client.get("/admin/performance/trends?pattern=code").status_code == 403

@@ -1,625 +1,352 @@
-# Production Deployment Guide
+# AI Cost Optimizer - Production Deployment Guide
 
-**AI Cost Optimizer with Production Feedback Loop**
+Complete guide for deploying the AI Cost Optimizer to production environments (RunPod, AWS, GCP, Azure, etc.)
 
-This guide covers deploying and operating the AI Cost Optimizer in production with the feedback loop enabled.
+## 📋 Prerequisites
+
+### 1. Supabase Account & Configuration
+- Sign up at [supabase.com](https://supabase.com)
+- Create a new project
+- Run database migrations (see [Supabase Setup](#supabase-setup))
+- Get your credentials:
+  - `SUPABASE_URL`
+  - `SUPABASE_ANON_KEY`
+  - `SUPABASE_SERVICE_KEY`
+  - `SUPABASE_JWT_SECRET`
+
+### 2. AI Provider API Keys
+At least one provider is required:
+- **Google Gemini** (recommended for free tier): [makersuite.google.com](https://makersuite.google.com/app/apikey)
+- **Anthropic Claude**: [console.anthropic.com](https://console.anthropic.com)
+- **Cerebras**: [cloud.cerebras.ai](https://cloud.cerebras.ai)
+- **OpenRouter** (fallback): [openrouter.ai](https://openrouter.ai)
+
+### 3. Docker & BuildX
+```bash
+# Verify Docker is installed
+docker --version
+
+# Enable BuildX (for multi-platform builds)
+docker buildx create --use
+```
 
 ---
 
-## Prerequisites
+## 🚀 Quick Start (RunPod Deployment)
 
-### Required
-- Docker & Docker Compose installed
-- At least one AI provider API key:
-  - Google Gemini API key (recommended, free tier available)
-  - Anthropic Claude API key
-  - OpenRouter API key
-- 2GB+ available RAM
-- 5GB+ available disk space
-
-### Optional (for production)
-- Domain name with SSL certificate
-- Nginx or similar reverse proxy
-- Monitoring tools (Prometheus, Grafana)
-- Log aggregation system
-
----
-
-## First-Time Setup
-
-### 1. Clone and Configure
+### Step 1: Build Multi-Platform Docker Image
 
 ```bash
-# Clone repository
-git clone <repository-url>
-cd ai-cost-optimizer
+# Build for linux/amd64 (RunPod, AWS, most cloud platforms)
+docker buildx build \
+  --platform linux/amd64 \
+  --tag your-dockerhub-username/ai-cost-optimizer:latest \
+  --push \
+  .
 
-# Copy environment template
-cp .env.example .env
-
-# Edit .env with your settings
-nano .env
+# Alternative: Build without pushing (for testing)
+docker buildx build \
+  --platform linux/amd64 \
+  --tag ai-cost-optimizer:latest \
+  --load \
+  .
 ```
 
-### 2. Configure Environment Variables
-
-Edit `.env` with your values:
+### Step 2: Test Locally
 
 ```bash
-# Required: At least one provider
-GOOGLE_API_KEY=your_gemini_api_key_here
-ANTHROPIC_API_KEY=your_claude_api_key_here
-OPENROUTER_API_KEY=your_openrouter_api_key_here
+# Run with environment variables
+docker run -p 8000:8000 \
+  -e SUPABASE_URL="https://your-project.supabase.co" \
+  -e SUPABASE_ANON_KEY="your-anon-key" \
+  -e SUPABASE_SERVICE_KEY="your-service-key" \
+  -e SUPABASE_JWT_SECRET="your-jwt-secret" \
+  -e GOOGLE_API_KEY="your-gemini-key" \
+  -e ANTHROPIC_API_KEY="your-claude-key" \
+  ai-cost-optimizer:latest
 
-# Database (PostgreSQL in production)
-POSTGRES_USER=optimizer
-POSTGRES_PASSWORD=change_this_secure_password
-POSTGRES_DB=cost_optimizer
-DATABASE_URL=postgresql://optimizer:change_this_secure_password@db:5432/cost_optimizer
-
-# pgAdmin (Web UI for database)
-PGADMIN_DEFAULT_EMAIL=admin@optimizer.local
-PGADMIN_DEFAULT_PASSWORD=change_this_admin_password
-
-# Application settings
-LOG_LEVEL=INFO
-ENVIRONMENT=production
-```
-
-**Security Note**: Use strong, unique passwords for production!
-
-### 3. Run Database Migrations
-
-```bash
-# Start database only
-docker-compose up -d db
-
-# Wait for PostgreSQL to be ready (15-30 seconds)
-sleep 30
-
-# Run migrations
-docker-compose run --rm api python -m app.database.migrate
-```
-
-**Expected output:**
-```
-Running database migrations...
-✓ Created routing_requests table
-✓ Created production_feedback table
-✓ Created learning_overrides table
-Migration complete!
-```
-
-### 4. Start All Services
-
-```bash
-# Start everything
-docker-compose up -d
-
-# Check service health
-docker-compose ps
-```
-
-**Expected services:**
-- `api` - FastAPI application (port 8000)
-- `db` - PostgreSQL database (port 5432)
-- `pgadmin` - Database admin UI (port 5050)
-
-### 5. Verify Deployment
-
-```bash
-# Check API health
+# Test health endpoint
 curl http://localhost:8000/health
-
-# Expected: {"status": "healthy", "providers": [...]}
-
-# View API documentation
-open http://localhost:8000/docs
-
-# Access pgAdmin (optional)
-open http://localhost:5050
 ```
+
+### Step 3: Deploy to RunPod
+
+1. **Create RunPod Account**: [runpod.io](https://www.runpod.io/)
+
+2. **Deploy Container**:
+   - Go to "My Pods" → "Deploy"
+   - Container Image: `your-dockerhub-username/ai-cost-optimizer:latest`
+   - Container Disk: 10GB
+   - Exposed HTTP Ports: `8000`
+   - Environment Variables:
+     ```
+     SUPABASE_URL=https://your-project.supabase.co
+     SUPABASE_ANON_KEY=eyJhbGc...
+     SUPABASE_SERVICE_KEY=eyJhbGc...
+     SUPABASE_JWT_SECRET=your-jwt-secret
+     GOOGLE_API_KEY=your-gemini-key
+     ANTHROPIC_API_KEY=your-claude-key
+     LOG_LEVEL=INFO
+     ```
+
+3. **Access Your API**:
+   - RunPod will provide a public URL (e.g., `https://xxx-8000.proxy.runpod.net`)
+   - Test: `curl https://xxx-8000.proxy.runpod.net/health`
 
 ---
 
-## Daily Operations
+## 🗄️ Supabase Setup
 
-### Starting Services
+### Run Database Migrations
 
-**Option 1: Convenience script**
-```bash
-./scripts/startup.sh
-```
+1. **Login to Supabase Dashboard**: [supabase.com/dashboard](https://supabase.com/dashboard)
 
-**Option 2: Docker Compose directly**
-```bash
-docker-compose up -d
-docker-compose logs -f  # Follow logs
-```
+2. **Navigate to SQL Editor**: Your Project → SQL Editor
 
-### Stopping Services
+3. **Run Migrations in Order**:
 
-**Option 1: Convenience script**
-```bash
-./scripts/shutdown.sh
-```
+   **Migration 1: Extensions**
+   ```bash
+   # Copy contents of migrations/supabase_part1_extensions.sql
+   # Paste into SQL Editor → Run
+   ```
 
-**Option 2: Docker Compose directly**
-```bash
-# Stop but keep data
-docker-compose down
+   **Migration 2: Tables**
+   ```bash
+   # Copy contents of migrations/supabase_create_tables.sql
+   # Paste into SQL Editor → Run
+   ```
 
-# Stop and remove volumes (DELETES ALL DATA!)
-docker-compose down -v
-```
+   **Migration 3: RLS Policies**
+   ```bash
+   # Copy contents of migrations/supabase_part2_schema_fixed.sql
+   # Paste into SQL Editor → Run
+   ```
 
-### Viewing Logs
+4. **Enable Realtime** (for live metrics):
+   - Go to Database → Replication
+   - Find `routing_metrics` table
+   - Toggle "Enable Realtime"
+   - Select "INSERT" events
+   - Save
 
-```bash
-# All services
-docker-compose logs -f
-
-# API only
-docker-compose logs -f api
-
-# Last 100 lines
-docker-compose logs --tail=100 api
-
-# Since specific time
-docker-compose logs --since 2024-01-15T10:00:00 api
-```
-
-### Restarting Services
-
-```bash
-# Restart all
-docker-compose restart
-
-# Restart API only
-docker-compose restart api
-
-# Rebuild and restart (after code changes)
-docker-compose up -d --build
-```
+5. **Verify Setup**:
+   ```sql
+   -- Check tables were created
+   SELECT tablename FROM pg_tables WHERE schemaname = 'public';
+   
+   -- Check RLS is enabled
+   SELECT tablename, rowsecurity FROM pg_tables 
+   WHERE schemaname = 'public' AND rowsecurity = true;
+   ```
 
 ---
 
-## Database Management
+## 🔐 Environment Variables Reference
 
-### Accessing pgAdmin
+### Required Variables
 
-1. Open browser: `http://localhost:5050`
-2. Login with credentials from `.env`:
-   - Email: `PGADMIN_DEFAULT_EMAIL`
-   - Password: `PGADMIN_DEFAULT_PASSWORD`
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `SUPABASE_URL` | Your Supabase project URL | `https://abc123.supabase.co` |
+| `SUPABASE_ANON_KEY` | Public anon key (respects RLS) | `eyJhbGc...` |
+| `SUPABASE_SERVICE_KEY` | Admin key (bypasses RLS) | `eyJhbGc...` |
+| `SUPABASE_JWT_SECRET` | JWT signing secret | `your-jwt-secret` |
+| `GOOGLE_API_KEY` | Gemini API key (at least one provider) | `AIzaSy...` |
 
-3. Add server connection:
-   - Host: `db`
-   - Port: `5432`
-   - Database: `cost_optimizer`
-   - Username: `POSTGRES_USER`
-   - Password: `POSTGRES_PASSWORD`
+### Optional Variables
 
-### Running SQL Queries
-
-**Via pgAdmin:**
-Use the Query Tool in pgAdmin web interface
-
-**Via Docker:**
-```bash
-# Open PostgreSQL shell
-docker-compose exec db psql -U optimizer -d cost_optimizer
-
-# Run query directly
-docker-compose exec db psql -U optimizer -d cost_optimizer -c "SELECT COUNT(*) FROM production_feedback;"
-```
-
-### Common Database Queries
-
-```sql
--- Check feedback count
-SELECT COUNT(*) FROM production_feedback;
-
--- View recent feedback
-SELECT * FROM production_feedback
-ORDER BY created_at DESC
-LIMIT 10;
-
--- Feedback quality breakdown
-SELECT quality_score, COUNT(*) as count
-FROM production_feedback
-GROUP BY quality_score
-ORDER BY quality_score;
-
--- Check learning overrides
-SELECT * FROM learning_overrides
-WHERE confidence_level = 'high';
-
--- View routing decisions
-SELECT provider, model, COUNT(*) as count
-FROM routing_requests
-WHERE created_at > NOW() - INTERVAL '24 hours'
-GROUP BY provider, model
-ORDER BY count DESC;
-```
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ANTHROPIC_API_KEY` | Claude API key | - |
+| `OPENROUTER_API_KEY` | OpenRouter API key | - |
+| `CEREBRAS_API_KEY` | Cerebras API key | - |
+| `LOG_LEVEL` | Logging level | `INFO` |
+| `PORT` | Server port | `8000` |
+| `EMBEDDING_MODEL_NAME` | Sentence transformer model | `sentence-transformers/all-MiniLM-L6-v2` |
+| `EMBEDDING_DEVICE` | Device for embeddings | `cpu` (or `cuda`) |
+| `SIMILARITY_THRESHOLD` | Cache similarity threshold | `0.95` |
 
 ---
 
-## Monitoring & Maintenance
+## 🌐 Frontend Integration
 
-### Health Checks
-
-```bash
-# API health
-curl http://localhost:8000/health
-
-# Feedback summary
-curl http://localhost:8000/admin/feedback/summary
-
-# Learning status
-curl http://localhost:8000/admin/learning/status
-```
-
-### Feedback Summary Dashboard
+### Option 1: Use Provided Dashboard
 
 ```bash
-# View feedback metrics
-curl http://localhost:8000/admin/feedback/summary | jq
+# Serve the frontend
+cd frontend
+python3 -m http.server 8080
+
+# Open in browser
+open http://localhost:8080/realtime-dashboard.html
 ```
 
-**Example output:**
-```json
-{
-  "total_feedback": 150,
-  "avg_quality_score": 4.2,
-  "by_model": {
-    "gemini-1.5-flash": {"count": 80, "avg_score": 4.5},
-    "claude-3-5-haiku-20241022": {"count": 70, "avg_score": 3.9}
-  },
-  "by_query_pattern": {
-    "code": {"count": 60, "avg_score": 4.6},
-    "creative": {"count": 45, "avg_score": 4.0}
-  }
-}
+**Configuration**:
+1. Edit `frontend/realtime-dashboard.html`
+2. Replace `YOUR_ANON_KEY_HERE` with your Supabase anon key
+3. Deploy to any static host (Vercel, Netlify, GitHub Pages)
+
+### Option 2: Custom Integration
+
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  'https://your-project.supabase.co',
+  'your-anon-key'
+)
+
+// Subscribe to routing metrics
+const channel = supabase
+  .channel('my-app')
+  .on('postgres_changes', {
+    event: 'INSERT',
+    schema: 'public',
+    table: 'routing_metrics'
+  }, (payload) => {
+    console.log('New metric:', payload.new)
+    // Update your UI
+  })
+  .subscribe()
 ```
 
-### Learning Status
-
-```bash
-# Check learning system health
-curl http://localhost:8000/admin/learning/status | jq
-```
-
-**Example output:**
-```json
-{
-  "total_overrides": 5,
-  "confidence_distribution": {
-    "high": 3,
-    "medium": 2,
-    "low": 0
-  },
-  "last_retrain": "2024-01-15T14:30:00Z",
-  "recommendation_coverage": "32.5%"
-}
-```
-
-### Manual Retraining
-
-**Dry run (preview changes):**
-```bash
-curl -X POST "http://localhost:8000/admin/learning/retrain?dry_run=true" | jq
-```
-
-**Actual retrain:**
-```bash
-curl -X POST "http://localhost:8000/admin/learning/retrain?dry_run=false" | jq
-```
-
-**With thresholds:**
-```bash
-curl -X POST "http://localhost:8000/admin/learning/retrain?dry_run=false&min_samples=15&confidence_threshold=0.75" | jq
-```
-
-### Metrics to Monitor
-
-1. **Feedback Volume**: Should have steady stream (target: 10+ per day minimum)
-2. **Quality Scores**: Average should be 3.5+ (on 1-5 scale)
-3. **Learning Coverage**: Percentage of patterns with overrides (target: 20-40%)
-4. **Confidence Distribution**: Most overrides should be high or medium confidence
-5. **Error Rates**: Monitor API logs for provider failures
+See `docs/REALTIME_SETUP.md` for complete guide.
 
 ---
 
-## Backup & Recovery
+## 🧪 Testing Deployment
 
-### Database Backups
-
-**Automated backup (cron):**
+### 1. Health Check
 ```bash
-# Add to crontab
-0 2 * * * docker-compose exec -T db pg_dump -U optimizer cost_optimizer | gzip > /backups/optimizer_$(date +\%Y\%m\%d).sql.gz
+curl https://your-deployment-url/health
+# Expected: {"status": "healthy"}
 ```
 
-**Manual backup:**
+### 2. List Providers
 ```bash
-# Backup database
-docker-compose exec -T db pg_dump -U optimizer cost_optimizer > backup_$(date +%Y%m%d).sql
-
-# Backup with compression
-docker-compose exec -T db pg_dump -U optimizer cost_optimizer | gzip > backup_$(date +%Y%m%d).sql.gz
+curl https://your-deployment-url/providers
+# Expected: List of configured providers
 ```
 
-**Restore from backup:**
+### 3. Test Completion (requires authentication)
 ```bash
-# Stop API
-docker-compose stop api
-
-# Restore database
-gunzip -c backup_20240115.sql.gz | docker-compose exec -T db psql -U optimizer cost_optimizer
-
-# Restart API
-docker-compose start api
-```
-
-### Configuration Backups
-
-```bash
-# Backup important files
-tar -czf optimizer_config_$(date +%Y%m%d).tar.gz \
-  .env \
-  docker-compose.yml \
-  nginx.conf
-```
-
----
-
-## Troubleshooting
-
-### API Won't Start
-
-**Check logs:**
-```bash
-docker-compose logs api
-```
-
-**Common issues:**
-1. **Missing API keys**: Check `.env` file has at least one provider key
-2. **Database connection failed**: Ensure `db` service is running
-3. **Port already in use**: Change port in `docker-compose.yml`
-
-**Solution:**
-```bash
-# Restart everything
-docker-compose down
-docker-compose up -d
-```
-
-### Database Connection Errors
-
-**Symptoms:**
-- API logs show "could not connect to server"
-- `/health` endpoint returns database error
-
-**Check database:**
-```bash
-docker-compose ps db
-docker-compose logs db
-```
-
-**Fix:**
-```bash
-# Restart database
-docker-compose restart db
-
-# Wait for startup
-sleep 15
-
-# Restart API
-docker-compose restart api
-```
-
-### Feedback Not Recording
-
-**Check:**
-1. Verify `request_id` exists in `routing_requests` table
-2. Check API logs for validation errors
-3. Verify database migrations ran
-
-**Debug:**
-```bash
-# Check routing_requests
-docker-compose exec db psql -U optimizer -d cost_optimizer -c "SELECT COUNT(*) FROM routing_requests;"
-
-# Check recent requests
-docker-compose exec db psql -U optimizer -d cost_optimizer -c "SELECT id, created_at FROM routing_requests ORDER BY created_at DESC LIMIT 5;"
-
-# Submit test feedback
-curl -X POST http://localhost:8000/production/feedback \
+# Get JWT token from Supabase Auth first
+curl -X POST https://your-deployment-url/complete \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-    "request_id": "valid_request_id_here",
-    "quality_score": 4,
-    "is_correct": true
-  }'
+  -d '{"prompt": "What is Python?", "max_tokens": 100}'
 ```
-
-### Retraining Returns No Changes
-
-**Normal if:**
-- Not enough feedback samples (need 10+ per pattern-model)
-- Feedback doesn't meet confidence threshold
-- Feedback quality too variable
-
-**Check:**
-```bash
-# View feedback counts by pattern
-curl http://localhost:8000/admin/feedback/summary | jq '.by_query_pattern'
-
-# Try lower thresholds
-curl -X POST "http://localhost:8000/admin/learning/retrain?dry_run=true&min_samples=5&confidence_threshold=0.65" | jq
-```
-
-### High Memory Usage
-
-**Check container stats:**
-```bash
-docker stats
-```
-
-**If API using > 1GB:**
-1. Check for memory leaks in logs
-2. Restart API: `docker-compose restart api`
-3. Consider increasing container memory limit in `docker-compose.yml`
-
-### Provider API Failures
-
-**Check provider status:**
-```bash
-curl http://localhost:8000/health | jq '.providers'
-```
-
-**If provider failing:**
-1. Verify API key is correct in `.env`
-2. Check provider service status page
-3. Review rate limits (may need to wait)
-4. System will fall back to OpenRouter automatically
 
 ---
 
-## Production Considerations
+## 📊 Monitoring & Logs
 
-### Security Hardening
+### View Logs (RunPod)
+```bash
+# Via RunPod Dashboard
+# Pods → Your Pod → Logs tab
 
-1. **Environment Variables:**
-   - Never commit `.env` to version control
-   - Use secrets management (AWS Secrets Manager, Vault)
-   - Rotate API keys regularly
-
-2. **Database:**
-   - Use strong passwords (20+ characters)
-   - Enable SSL/TLS for PostgreSQL connections
-   - Restrict network access to database port
-
-3. **API:**
-   - Enable authentication/authorization
-   - Use HTTPS only (configure reverse proxy)
-   - Implement rate limiting
-   - Set up CORS policies
-
-4. **Docker:**
-   - Don't run containers as root
-   - Use specific image versions (not `latest`)
-   - Scan images for vulnerabilities
-
-### Reverse Proxy (Nginx)
-
-**Example nginx configuration:**
-```nginx
-server {
-    listen 80;
-    server_name optimizer.example.com;
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name optimizer.example.com;
-
-    ssl_certificate /etc/ssl/certs/optimizer.crt;
-    ssl_certificate_key /etc/ssl/private/optimizer.key;
-
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
+# Via API
+curl -X GET https://api.runpod.io/v1/pods/{POD_ID}/logs \
+  -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-### Monitoring & Alerting
+### Health Metrics
+```bash
+# Check application health
+curl https://your-deployment-url/health
 
-**Recommended metrics:**
-- API response times (p50, p95, p99)
-- Error rates by endpoint
-- Provider API latencies
-- Database query performance
-- Feedback submission rate
-- Learning override count
+# Check cache stats
+curl https://your-deployment-url/cache/stats
 
-**Tools:**
-- Prometheus for metrics collection
-- Grafana for dashboards
-- Alertmanager for alerts
-- ELK stack for log aggregation
+# Check routing metrics (requires auth)
+curl https://your-deployment-url/routing/metrics \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
 
-### Scaling
+---
 
-**Horizontal scaling:**
+## 🔧 Troubleshooting
+
+### Issue: "Module not found" errors
+**Solution**: Ensure all dependencies in `requirements.txt` are installed
+```bash
+docker build --no-cache -t ai-cost-optimizer:latest .
+```
+
+### Issue: Supabase connection fails
+**Solution**: Verify environment variables
+```bash
+docker run ai-cost-optimizer:latest env | grep SUPABASE
+```
+
+### Issue: "No providers configured"
+**Solution**: Add at least one AI provider API key
+```bash
+docker run -e GOOGLE_API_KEY=your-key ai-cost-optimizer:latest
+```
+
+### Issue: JWT authentication fails
+**Solution**: Ensure `SUPABASE_JWT_SECRET` matches your Supabase project settings
+- Dashboard → Settings → API → JWT Secret
+
+---
+
+## 🚀 Production Best Practices
+
+### 1. Use Secrets Management
+```bash
+# AWS Secrets Manager
+aws secretsmanager get-secret-value --secret-id ai-cost-optimizer/prod
+
+# GCP Secret Manager
+gcloud secrets versions access latest --secret="ai-cost-optimizer-env"
+
+# RunPod Environment Variables
+# Use RunPod's secure environment variable storage
+```
+
+### 2. Enable HTTPS
+```bash
+# Use reverse proxy (nginx, Caddy, Traefik)
+# Or use RunPod's built-in HTTPS endpoints
+```
+
+### 3. Set Resource Limits
 ```yaml
 # docker-compose.yml
 services:
   api:
     deploy:
-      replicas: 3
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
 ```
 
-**Load balancing:**
-- Use nginx or HAProxy
-- Consider cloud load balancers (AWS ALB, GCP Load Balancer)
-
-**Database:**
-- Use managed PostgreSQL (AWS RDS, GCP Cloud SQL)
-- Enable read replicas for analytics
-- Set up automated backups
-
----
-
-## Automated Retraining (Optional)
-
-### Daily Retraining Cron Job
-
+### 4. Configure Auto-Scaling
 ```bash
-# Add to crontab (runs at 3 AM daily)
-0 3 * * * curl -X POST "http://localhost:8000/admin/learning/retrain?dry_run=false" >> /var/log/optimizer_retrain.log 2>&1
-```
-
-### Monitoring Retraining
-
-```bash
-# View retraining log
-tail -f /var/log/optimizer_retrain.log
-
-# Check last retrain time
-curl http://localhost:8000/admin/learning/status | jq '.last_retrain'
+# RunPod Auto-Scaling
+# Min Pods: 1
+# Max Pods: 5
+# Scale metric: CPU > 70%
 ```
 
 ---
 
-## Next Steps
+## 📚 Additional Resources
 
-After deployment:
-
-1. **Submit test requests** to verify routing works
-2. **Monitor initial feedback** (first 50-100 responses)
-3. **Run first retraining** after 1-2 weeks (100+ feedback samples)
-4. **Review learning overrides** to ensure quality
-5. **Set up monitoring dashboards**
-6. **Configure automated backups**
-7. **Document any custom configurations**
+- [Supabase Realtime Guide](./REALTIME_SETUP.md)
+- [Authentication Setup](../app/auth.py)
+- [API Documentation](http://your-deployment-url/docs)
+- [RunPod Documentation](https://docs.runpod.io/)
 
 ---
 
-## Support & Resources
+**Ready for production!** 🎉
 
-- **API Documentation**: `http://localhost:8000/docs`
-- **Project README**: `README.md`
-- **Architecture Documentation**: `docs/PRODUCTION_FEEDBACK_LOOP.md`
-- **Issue Tracker**: GitHub Issues
-
----
-
-**Version**: 2.0.0
-**Last Updated**: 2024-01-15
+Need help? Open an issue on GitHub or check the documentation.

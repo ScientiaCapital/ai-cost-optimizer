@@ -1,30 +1,46 @@
-"""Database utilities package."""
-# NOTE: There's a naming conflict - app/database.py (SQLite module) vs app/database/ (PostgreSQL package)
-# We import CostTracker by accessing the module file directly using importlib
-import importlib.util
-import sys
-from pathlib import Path
+"""Database utilities package (Supabase-based)."""
 
-# Load database.py as a module to avoid circular import
-db_module_path = Path(__file__).parent.parent / "database.py"
-spec = importlib.util.spec_from_file_location("app.database_sqlite", db_module_path)
-database_sqlite = importlib.util.module_from_spec(spec)
-sys.modules["app.database_sqlite"] = database_sqlite
-spec.loader.exec_module(database_sqlite)
-
-# Re-export classes and functions from the SQLite module (legacy)
-CostTracker = database_sqlite.CostTracker
-create_routing_metrics_table = database_sqlite.create_routing_metrics_table
-
-# Import new async Supabase modules
+# Import Supabase modules
 from .supabase_client import SupabaseClient, get_supabase_client, close_supabase_client
 from .cost_tracker_async import AsyncCostTracker
 
+# Legacy stub for backward compatibility
+# If you need CostTracker, it has been replaced with AsyncCostTracker
+class CostTracker:
+    """
+    Deprecated: Use AsyncCostTracker instead.
+
+    This is a stub class for backward compatibility.
+    All methods have been migrated to AsyncCostTracker with Supabase backend.
+    """
+    def __init__(self, *args, **kwargs):
+        import logging
+        logging.warning(
+            "CostTracker is deprecated. Use AsyncCostTracker instead.\n"
+            "Example: from app.database import AsyncCostTracker\n"
+            "         tracker = AsyncCostTracker(user_id='your-user-id')"
+        )
+
+
+def create_routing_metrics_table(*args, **kwargs):
+    """
+    Deprecated: Routing metrics table is now in Supabase.
+
+    This function is no longer needed. Tables are created via SQL migrations
+    in migrations/supabase_*.sql files.
+    """
+    import logging
+    logging.warning(
+        "create_routing_metrics_table() is deprecated.\n"
+        "Tables are created via Supabase SQL migrations (migrations/supabase_*.sql)."
+    )
+
+
 __all__ = [
-    # Legacy SQLite
+    # Legacy stubs
     'CostTracker',
     'create_routing_metrics_table',
-    # New Supabase async
+    # Supabase async modules
     'SupabaseClient',
     'get_supabase_client',
     'close_supabase_client',

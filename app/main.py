@@ -6,14 +6,14 @@ import sqlite3
 from typing import Optional, List
 from contextlib import asynccontextmanager
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from .providers import init_providers
-from .database import CostTracker
 from app.services.routing_service import RoutingService
+from app.auth import get_current_user_id, OptionalAuth
 from app.models.feedback import FeedbackRequest as ProductionFeedbackRequest, FeedbackResponse as ProductionFeedbackResponse
 from app.database.feedback_store import FeedbackStore
 from app.models.admin import (
@@ -145,64 +145,12 @@ logger.info(f"Metrics cache initialized: Redis available = {metrics_cache.ping()
 
 
 # ============================================================================
-# WEBSOCKET CONNECTION MANAGER
+# REAL-TIME METRICS (via Supabase Realtime)
 # ============================================================================
-
-class ConnectionManager:
-    """
-    Manages WebSocket connections for real-time metrics broadcasting.
-
-    Handles multiple concurrent connections and broadcasts updates
-    to all connected clients every 5 seconds.
-
-    Features:
-    - Multiple concurrent client support
-    - Automatic cleanup of disconnected clients
-    - Graceful error handling
-    - Per-client and broadcast messaging
-    """
-
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        """Accept and register new WebSocket connection"""
-        await websocket.accept()
-        self.active_connections.append(websocket)
-        logger.info(f"WebSocket connected. Total connections: {len(self.active_connections)}")
-
-    def disconnect(self, websocket: WebSocket):
-        """Remove disconnected WebSocket"""
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-            logger.info(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
-
-    async def broadcast(self, message: dict):
-        """Broadcast message to all connected clients"""
-        disconnected = []
-
-        for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except Exception as e:
-                logger.warning(f"Failed to send to client: {e}")
-                disconnected.append(connection)
-
-        # Clean up disconnected clients
-        for conn in disconnected:
-            self.disconnect(conn)
-
-    async def send_personal(self, message: dict, websocket: WebSocket):
-        """Send message to specific client"""
-        try:
-            await websocket.send_json(message)
-        except Exception as e:
-            logger.error(f"Failed to send personal message: {e}")
-            self.disconnect(websocket)
-
-
-# Initialize connection manager
-manager = ConnectionManager()
+#
+# Custom WebSocket endpoint has been replaced with Supabase Realtime.
+# Frontend clients should use Supabase Realtime subscriptions instead.
+# See docs/REALTIME_SETUP.md for migration guide.
 
 
 # Request/Response models
@@ -281,7 +229,10 @@ async def health_check():
 
 
 @app.post("/complete", response_model=CompleteResponse)
-async def complete_prompt(request: CompleteRequest):
+async def complete_prompt(
+    request: CompleteRequest,
+    user_id: Optional[str] = OptionalAuth()
+):
     """
     Route and complete a prompt using optimal provider with caching.
     NOW WITH A/B TESTING INTEGRATION.
@@ -432,7 +383,9 @@ async def complete_prompt(request: CompleteRequest):
 
 
 @app.get("/stats", response_model=StatsResponse)
-async def get_usage_stats():
+async def get_usage_stats(
+    user_id: Optional[str] = OptionalAuth()
+):
     """
     Get usage statistics from database.
 
@@ -480,7 +433,10 @@ async def list_providers():
 
 
 @app.get("/recommendation")
-async def get_recommendation(prompt: str):
+async def get_recommendation(
+    prompt: str,
+    user_id: Optional[str] = OptionalAuth()
+):
     """
     Get routing recommendation without executing request.
 
@@ -502,7 +458,9 @@ async def get_recommendation(prompt: str):
 
 
 @app.get("/routing/metrics")
-async def get_routing_metrics():
+async def get_routing_metrics(
+    user_id: Optional[str] = OptionalAuth()
+):
     """
     Get auto-routing analytics for monitoring and ROI tracking with Redis caching.
 
@@ -557,7 +515,11 @@ async def get_routing_metrics():
 
 
 @app.get("/routing/decision")
-async def get_routing_decision(prompt: str, auto_route: bool = True):
+async def get_routing_decision(
+    prompt: str,
+    auto_route: bool = True,
+    user_id: Optional[str] = OptionalAuth()
+):
     """
     Get detailed routing explanation for debugging and transparency.
 
@@ -591,7 +553,9 @@ async def get_routing_decision(prompt: str, auto_route: bool = True):
 
 
 @app.get("/cache/stats")
-async def get_cache_stats():
+async def get_cache_stats(
+    user_id: Optional[str] = OptionalAuth()
+):
     """
     Get response cache statistics.
 
@@ -613,7 +577,9 @@ async def get_cache_stats():
 
 
 @app.get("/metrics-cache/stats")
-async def get_metrics_cache_stats():
+async def get_metrics_cache_stats(
+    user_id: Optional[str] = OptionalAuth()
+):
     """
     Get metrics cache performance statistics (Redis caching for /routing/metrics).
 
@@ -652,7 +618,11 @@ async def get_metrics_cache_stats():
 
 
 @app.post("/feedback", response_model=FeedbackResponse)
-async def submit_feedback(request: FeedbackRequest, user_agent: Optional[str] = None):
+async def submit_feedback(
+    request: FeedbackRequest,
+    user_agent: Optional[str] = None,
+    user_id: Optional[str] = OptionalAuth()
+):
     """
     Submit user feedback (thumbs up/down) for a cached response.
 
@@ -722,7 +692,10 @@ async def submit_feedback(request: FeedbackRequest, user_agent: Optional[str] = 
 
 
 @app.post("/production/feedback", response_model=ProductionFeedbackResponse)
-async def submit_production_feedback(request: ProductionFeedbackRequest):
+async def submit_production_feedback(
+    request: ProductionFeedbackRequest,
+    user_id: Optional[str] = OptionalAuth()
+):
     """Submit quality feedback for a request.
 
     This endpoint collects user feedback on response quality for the
@@ -759,7 +732,9 @@ async def submit_production_feedback(request: ProductionFeedbackRequest):
 
 
 @app.get("/quality/stats")
-async def get_quality_stats():
+async def get_quality_stats(
+    user_id: Optional[str] = OptionalAuth()
+):
     """
     Get quality statistics across all cached responses.
 
@@ -780,7 +755,9 @@ async def get_quality_stats():
 
 
 @app.get("/insights")
-async def get_learning_insights():
+async def get_learning_insights(
+    user_id: Optional[str] = OptionalAuth()
+):
     """Get intelligent routing insights from learning module.
 
     NOTE: This endpoint is being migrated to the new routing architecture.
@@ -804,7 +781,9 @@ def _is_sqlite(conn) -> bool:
 
 
 @app.get("/admin/feedback/summary", response_model=FeedbackSummary)
-async def get_feedback_summary():
+async def get_feedback_summary(
+    current_user_id: str = Depends(get_current_user_id)
+):
     """Get feedback statistics summary."""
     with get_connection() as conn:
         cursor = get_cursor(conn, dict_cursor=True)
@@ -851,7 +830,9 @@ async def get_feedback_summary():
 
 
 @app.get("/admin/learning/status", response_model=LearningStatus)
-async def get_learning_status():
+async def get_learning_status(
+    current_user_id: str = Depends(get_current_user_id)
+):
     """Get learning pipeline status."""
     with get_connection() as conn:
         cursor = get_cursor(conn, dict_cursor=True)
@@ -909,7 +890,10 @@ async def get_learning_status():
 
 
 @app.post("/admin/learning/retrain", response_model=RetrainingResult)
-async def trigger_retraining(dry_run: bool = True):
+async def trigger_retraining(
+    dry_run: bool = True,
+    current_user_id: str = Depends(get_current_user_id)
+):
     """Manually trigger retraining.
 
     Args:
@@ -927,7 +911,10 @@ async def trigger_retraining(dry_run: bool = True):
 
 
 @app.get("/admin/performance/trends", response_model=PerformanceTrends)
-async def get_performance_trends(pattern: str):
+async def get_performance_trends(
+    pattern: str,
+    current_user_id: str = Depends(get_current_user_id)
+):
     """Get performance trends for a pattern.
 
     Args:
@@ -975,90 +962,17 @@ async def get_performance_trends(pattern: str):
 # ============================================================================
 # WEBSOCKET ENDPOINTS
 # ============================================================================
-
-async def get_latest_metrics_for_websocket() -> dict:
-    """
-    Get latest metrics from Redis cache for WebSocket streaming.
-
-    Returns cached metrics with fallback to database if cache miss.
-    Adds timestamp to all responses for client-side tracking.
-
-    Returns:
-        Dict with metrics data and ISO timestamp
-    """
-    try:
-        # Get from Redis cache (sub-10ms)
-        cached_metrics = metrics_cache.get("metrics:latest")
-
-        if cached_metrics:
-            # Ensure timestamp is present
-            if "timestamp" not in cached_metrics:
-                cached_metrics["timestamp"] = datetime.now().isoformat()
-            return cached_metrics
-
-        # Cache miss - get from database
-        logger.warning("WebSocket cache miss, querying database")
-        metrics = await routing_service.get_routing_metrics(days=7)
-
-        # Add timestamp
-        metrics["timestamp"] = datetime.now().isoformat()
-
-        # Populate cache for next request
-        metrics_cache.set("metrics:latest", metrics, ttl=30)
-
-        return metrics
-
-    except Exception as e:
-        logger.error(f"Failed to get metrics for WebSocket: {e}")
-        return {
-            "error": "Failed to fetch metrics",
-            "timestamp": datetime.now().isoformat()
-        }
-
-
-@app.websocket("/ws/metrics")
-async def websocket_metrics_endpoint(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time metrics streaming.
-
-    Broadcasts metrics updates every 5 seconds to connected clients.
-    Uses Redis cache as data source for sub-10ms performance.
-
-    Connection flow:
-    1. Client connects
-    2. Server sends immediate metrics snapshot
-    3. Server sends updates every 5 seconds
-    4. Graceful disconnect handling
-
-    Features:
-    - Immediate metrics on connect
-    - 5-second periodic updates
-    - Multiple concurrent connections
-    - Redis cache integration
-    - Automatic cleanup on disconnect
-    """
-    await manager.connect(websocket)
-
-    try:
-        # Send immediate metrics on connect
-        initial_metrics = await get_latest_metrics_for_websocket()
-        await manager.send_personal(initial_metrics, websocket)
-
-        # Keep connection alive and send periodic updates
-        while True:
-            # Wait 5 seconds
-            await asyncio.sleep(5)
-
-            # Send latest metrics to this client
-            metrics = await get_latest_metrics_for_websocket()
-            await manager.send_personal(metrics, websocket)
-
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        logger.info("Client disconnected normally")
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        manager.disconnect(websocket)
+#
+# DEPRECATED: get_latest_metrics_for_websocket and /ws/metrics endpoint
+# have been replaced with Supabase Realtime.
+#
+# Clients should subscribe to Supabase Realtime channels instead:
+#   supabase.channel('routing-metrics')
+#     .on('postgres_changes', {...}, callback)
+#     .subscribe()
+#
+# See docs/REALTIME_SETUP.md for implementation details.
+# ============================================================================
 
 
 # Run the application

@@ -1,12 +1,15 @@
 {
   "mcpServers": {
+    "serena": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/oraios/serena", "serena-mcp-server"],
+      "env": {}
+    },
     "context7": {
       "type": "stdio",
       "command": "npx",
-      "args": [
-        "-y",
-        "@upstash/context7-mcp@latest"
-      ],
+      "args": ["-y", "@upstash/context7-mcp@latest"],
       "env": {
         "UPSTASH_VECTOR_REST_URL": "${UPSTASH_VECTOR_REST_URL}",
         "UPSTASH_VECTOR_REST_TOKEN": "${UPSTASH_VECTOR_REST_TOKEN}"

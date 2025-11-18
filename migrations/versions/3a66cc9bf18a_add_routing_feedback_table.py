@@ -21,11 +21,36 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Create routing_feedback table and add request_id to routing_metrics."""
 
+    from alembic import context
+
+    # Step 0: Create routing_metrics table if it doesn't exist (PostgreSQL only)
+    # SQLite will have it created by app/database.py
+    if context.get_bind().dialect.name == 'postgresql':
+        op.execute("""
+            CREATE TABLE IF NOT EXISTS routing_metrics (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP NOT NULL,
+                prompt_hash TEXT NOT NULL,
+                strategy_used TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                model TEXT NOT NULL,
+                confidence TEXT NOT NULL,
+                auto_route INTEGER NOT NULL,
+                estimated_cost REAL,
+                complexity_score REAL,
+                pattern TEXT,
+                fallback_used INTEGER DEFAULT 0,
+                metadata TEXT,
+                request_id TEXT UNIQUE,
+                selected_provider TEXT,
+                selected_model TEXT,
+                pattern_detected TEXT
+            )
+        """)
+
     # Step 1: Add request_id column to routing_metrics (if not exists)
     # This is needed for the FK from routing_feedback
     # Different syntax for SQLite vs PostgreSQL
-    from alembic import context
-
     if context.get_bind().dialect.name == 'postgresql':
         op.execute("""
             DO $$

@@ -1,62 +1,55 @@
-services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: optimizer-db
-    environment:
-      POSTGRES_DB: optimizer
-      POSTGRES_USER: optimizer_user
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./migrations/versions:/docker-entrypoint-initdb.d
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U optimizer_user"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - optimizer-network
+# AI Cost Optimizer - Docker Compose
+# Simplified configuration for Supabase-based deployment
+# No local database services needed - using Supabase managed infrastructure
 
+services:
   api:
     build: .
     container_name: optimizer-api
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://optimizer_user:${DB_PASSWORD}@postgres:5432/optimizer
+      # Supabase Configuration
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+
+      # AI Provider API Keys
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY}
+
+      # Embedding Configuration
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-sentence-transformers/all-MiniLM-L6-v2}
+      EMBEDDING_DEVICE: ${EMBEDDING_DEVICE:-cpu}
+      SIMILARITY_THRESHOLD: ${SIMILARITY_THRESHOLD:-0.95}
+
+      # Application Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      COST_OPTIMIZER_API_URL: ${COST_OPTIMIZER_API_URL:-http://localhost:8000}
     ports:
       - "8000:8000"
     restart: unless-stopped
     networks:
       - optimizer-network
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: optimizer-pgadmin
-    environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@optimizer.local}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
-    ports:
-      - "5050:80"
-    depends_on:
-      - postgres
-    restart: unless-stopped
-    networks:
-      - optimizer-network
-
-volumes:
-  postgres_data:
-    driver: local
+    # Health check for the API
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 networks:
   optimizer-network:
     driver: bridge
+
+# Note: All data storage is managed by Supabase
+# - PostgreSQL database (with pgvector)
+# - Real-time subscriptions
+# - Row-level security (RLS)
+# - Authentication (JWT)
+#
+# Access your Supabase dashboard at:
+# https://supabase.com/dashboard/project/YOUR_PROJECT_ID
