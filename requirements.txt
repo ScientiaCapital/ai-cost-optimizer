@@ -33,15 +33,17 @@ pytest-benchmark>=4.0.0
 # Database migrations
 SQLAlchemy>=2.0.0
 alembic>=1.12.0
-psycopg2-binary>=2.9.9
 asyncpg>=0.29.0
+
+# Supabase client
+supabase>=2.3.0
 
 # Scheduled jobs
 APScheduler>=3.10.4
 
-# Caching
-redis>=5.0.0
-hiredis>=2.2.0
+# Semantic search & embeddings
+sentence-transformers>=2.2.0
+torch>=2.0.0  # Required by sentence-transformers
 
 # Statistical analysis (A/B testing)
 scipy>=1.6.0

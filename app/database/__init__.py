@@ -12,8 +12,21 @@ database_sqlite = importlib.util.module_from_spec(spec)
 sys.modules["app.database_sqlite"] = database_sqlite
 spec.loader.exec_module(database_sqlite)
 
-# Re-export classes and functions from the SQLite module
+# Re-export classes and functions from the SQLite module (legacy)
 CostTracker = database_sqlite.CostTracker
 create_routing_metrics_table = database_sqlite.create_routing_metrics_table
 
-__all__ = ['CostTracker', 'create_routing_metrics_table']
+# Import new async Supabase modules
+from .supabase_client import SupabaseClient, get_supabase_client, close_supabase_client
+from .cost_tracker_async import AsyncCostTracker
+
+__all__ = [
+    # Legacy SQLite
+    'CostTracker',
+    'create_routing_metrics_table',
+    # New Supabase async
+    'SupabaseClient',
+    'get_supabase_client',
+    'close_supabase_client',
+    'AsyncCostTracker',
+]
