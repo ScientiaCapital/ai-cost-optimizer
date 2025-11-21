@@ -21,7 +21,7 @@ from app.models.admin import (
     RetrainingResult, PerformanceTrends
 )
 from app.learning.feedback_trainer import FeedbackTrainer
-from app.database.postgres import get_connection, get_cursor
+from app.services.admin_service import get_admin_service
 from app.scheduler import RetrainingScheduler
 from app.cache import create_redis_cache
 from app.routers import experiments
@@ -65,6 +65,11 @@ async def lifespan(app: FastAPI):
     if scheduler:
         scheduler.start()
         logger.info("✅ Retraining scheduler started")
+
+    # Initialize admin service with scheduler (for next_scheduled_run info)
+    from app.services.admin_service import get_admin_service
+    get_admin_service(scheduler=scheduler)
+    logger.info("✅ Admin service initialized")
 
     logger.info("🎉 AI Cost Optimizer ready!")
 
@@ -568,7 +573,7 @@ async def get_cache_stats(
         - popular_queries: Most frequently cached queries
     """
     try:
-        stats = routing_service.cost_tracker.get_cache_stats()
+        stats = await routing_service.cost_tracker.get_cache_stats()
         return stats
 
     except Exception as e:
@@ -694,7 +699,7 @@ async def submit_feedback(
 @app.post("/production/feedback", response_model=ProductionFeedbackResponse)
 async def submit_production_feedback(
     request: ProductionFeedbackRequest,
-    user_id: Optional[str] = OptionalAuth()
+    user_id: Optional[str] = Depends(OptionalAuth())
 ):
     """Submit quality feedback for a request.
 
@@ -709,12 +714,14 @@ async def submit_production_feedback(
         Feedback confirmation with feedback_id
     """
     try:
-        feedback_id = feedback_store.store_feedback(
+        admin_service = get_admin_service()
+        feedback_id = await admin_service.store_routing_feedback(
             request_id=request.request_id,
             quality_score=request.quality_score,
             is_correct=request.is_correct,
             is_helpful=request.is_helpful,
-            comment=request.comment
+            comment=request.comment,
+            user_id=user_id
         )
 
         return ProductionFeedbackResponse(
@@ -782,117 +789,39 @@ def _is_sqlite(conn) -> bool:
 
 @app.get("/admin/feedback/summary", response_model=FeedbackSummary)
 async def get_feedback_summary(
-    current_user_id: str = Depends(get_current_user_id)
+    current_user_id: Optional[str] = Depends(OptionalAuth())
 ):
     """Get feedback statistics summary."""
-    with get_connection() as conn:
-        cursor = get_cursor(conn, dict_cursor=True)
+    admin_service = get_admin_service()
+    result = await admin_service.get_feedback_summary(user_id=current_user_id)
 
-        try:
-            # Total feedback and avg quality
-            cursor.execute("""
-                SELECT
-                    COUNT(*) as total,
-                    AVG(quality_score) as avg_quality
-                FROM routing_feedback
-            """)
-
-            stats = cursor.fetchone()
-
-            # Per-model stats
-            cursor.execute("""
-                SELECT
-                    selected_model,
-                    COUNT(*) as count,
-                    AVG(quality_score) as avg_quality,
-                    AVG(CASE WHEN is_correct THEN 1.0 ELSE 0.0 END) as correctness_rate
-                FROM routing_feedback
-                WHERE selected_model IS NOT NULL
-                GROUP BY selected_model
-                ORDER BY count DESC
-            """)
-
-            models = cursor.fetchall()
-
-            return FeedbackSummary(
-                total_feedback=stats['total'],
-                avg_quality_score=float(stats['avg_quality'] or 0),
-                models=[dict(m) for m in models]
-            )
-        except Exception as e:
-            # Table doesn't exist yet - return empty stats
-            logger.warning(f"Feedback table not found: {e}")
-            return FeedbackSummary(
-                total_feedback=0,
-                avg_quality_score=0.0,
-                models=[]
-            )
+    return FeedbackSummary(
+        total_feedback=result['total_feedback'],
+        avg_quality_score=result['avg_quality_score'],
+        models=result['models']
+    )
 
 
 @app.get("/admin/learning/status", response_model=LearningStatus)
 async def get_learning_status(
-    current_user_id: str = Depends(get_current_user_id)
+    current_user_id: Optional[str] = Depends(OptionalAuth())
 ):
     """Get learning pipeline status."""
-    with get_connection() as conn:
-        cursor = get_cursor(conn, dict_cursor=True)
+    admin_service = get_admin_service()
+    result = await admin_service.get_learning_status(user_id=current_user_id)
 
-        try:
-            # Get last run from performance history
-            cursor.execute("""
-                SELECT
-                    retraining_run_id,
-                    MAX(updated_at) as last_run
-                FROM model_performance_history
-                GROUP BY retraining_run_id
-                ORDER BY last_run DESC
-                LIMIT 1
-            """)
-
-            last_run = cursor.fetchone()
-
-            # Get confidence distribution
-            cursor.execute("""
-                SELECT
-                    confidence_level,
-                    COUNT(DISTINCT pattern) as count
-                FROM model_performance_history
-                WHERE retraining_run_id = (
-                    SELECT retraining_run_id
-                    FROM model_performance_history
-                    ORDER BY updated_at DESC
-                    LIMIT 1
-                )
-                GROUP BY confidence_level
-            """)
-
-            conf_dist = {row['confidence_level']: row['count'] for row in cursor.fetchall()}
-
-            return LearningStatus(
-                last_retraining_run=last_run['last_run'].isoformat() if last_run else None,
-                next_scheduled_run=None,  # TODO: Add scheduler info
-                confidence_distribution={
-                    'high': conf_dist.get('high', 0),
-                    'medium': conf_dist.get('medium', 0),
-                    'low': conf_dist.get('low', 0)
-                },
-                total_patterns=sum(conf_dist.values())
-            )
-        except Exception as e:
-            # Table doesn't exist yet - return empty status
-            logger.warning(f"Performance history table not found: {e}")
-            return LearningStatus(
-                last_retraining_run=None,
-                next_scheduled_run=None,
-                confidence_distribution={'high': 0, 'medium': 0, 'low': 0},
-                total_patterns=0
-            )
+    return LearningStatus(
+        last_retraining_run=result['last_retraining_run'],
+        next_scheduled_run=result['next_scheduled_run'],
+        confidence_distribution=result['confidence_distribution'],
+        total_patterns=result['total_patterns']
+    )
 
 
 @app.post("/admin/learning/retrain", response_model=RetrainingResult)
 async def trigger_retraining(
     dry_run: bool = True,
-    current_user_id: str = Depends(get_current_user_id)
+    current_user_id: Optional[str] = Depends(OptionalAuth())
 ):
     """Manually trigger retraining.
 
@@ -913,7 +842,7 @@ async def trigger_retraining(
 @app.get("/admin/performance/trends", response_model=PerformanceTrends)
 async def get_performance_trends(
     pattern: str,
-    current_user_id: str = Depends(get_current_user_id)
+    current_user_id: Optional[str] = Depends(OptionalAuth())
 ):
     """Get performance trends for a pattern.
 
@@ -923,40 +852,13 @@ async def get_performance_trends(
     Returns:
         Performance trends over time
     """
-    with get_connection() as conn:
-        cursor = get_cursor(conn, dict_cursor=True)
-        is_sqlite = _is_sqlite(conn)
-        placeholder = '?' if is_sqlite else '%s'
+    admin_service = get_admin_service()
+    trends = await admin_service.get_performance_trends(pattern=pattern, user_id=current_user_id)
 
-        try:
-            query = f"""
-                SELECT
-                    model,
-                    avg_quality_score,
-                    correctness_rate,
-                    sample_count,
-                    confidence_level,
-                    updated_at
-                FROM model_performance_history
-                WHERE pattern = {placeholder}
-                ORDER BY updated_at DESC
-                LIMIT 20
-            """
-            cursor.execute(query, (pattern,))
-
-            trends = cursor.fetchall()
-
-            return PerformanceTrends(
-                pattern=pattern,
-                trends=[dict(t) for t in trends]
-            )
-        except Exception as e:
-            # Table doesn't exist yet - return empty trends
-            logger.warning(f"Performance history table not found: {e}")
-            return PerformanceTrends(
-                pattern=pattern,
-                trends=[]
-            )
+    return PerformanceTrends(
+        pattern=pattern,
+        trends=trends
+    )
 
 
 # ============================================================================

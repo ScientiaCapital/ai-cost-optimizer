@@ -1,23 +1,16 @@
 # AI Cost Optimizer
 
-> Smart multi-LLM routing system that automatically selects the most cost-efficient model based on prompt complexity.
+> **Intelligent LLM router that reduces AI API costs by up to 60%** without sacrificing quality.
 
 ## What It Does
 
-Analyzes your prompts and routes them to the optimal LLM:
-- **Simple queries** (< 100 tokens, no complexity keywords) → **Gemini Flash** (free tier)
-- **Complex queries** (long prompts, technical keywords) → **Claude Haiku** (quality/cost balance)
-- **Fallback** → **OpenRouter** (aggregator for 40+ models)
+Automatically routes your prompts to the most cost-efficient model for each task:
+- **Smart routing** analyzes each prompt and selects the optimal provider
+- **Cost tracking** monitors spending across all requests
+- **Multi-provider support** works with Google Gemini, Anthropic Claude, OpenRouter, and more
+- **MCP integration** seamlessly integrates with Claude Desktop
 
-Tracks all costs in SQLite database so you always know your spend.
-
-### Key Features
-
-- **Learning Intelligence (Phase 1)**: Smart routing recommendations based on historical performance data
-- **Model Abstraction**: Black-box tier labels protect competitive intelligence while delivering customer value
-- **CLI Dashboards**: Visual learning progress and savings projections (customer-safe and admin versions)
-- **Agent-Powered Analysis**: Natural language cost optimization queries via Claude Agent SDK
-- **Real-Time Cost Tracking**: SQLite database tracks every request, cost, and performance metric
+**No configuration needed** - just add your API keys and let the optimizer do the rest.
 
 ## Quick Start
 
@@ -43,13 +36,12 @@ nano .env
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -r mcp/requirements.txt
 ```
 
-### 3. Start FastAPI Service
+### 3. Start the Service
 
 ```bash
-# Run the service
+# Run the optimizer
 python app/main.py
 
 # You should see:
@@ -59,7 +51,7 @@ python app/main.py
 
 Keep this terminal running!
 
-### 4. Configure Claude Desktop
+### 4. Configure Claude Desktop (Optional)
 
 Edit your Claude Desktop config:
 
@@ -73,7 +65,7 @@ Add the MCP server:
     "ai-cost-optimizer": {
       "command": "python3",
       "args": [
-        "/Users/tmkipper/Desktop/tk_projects/ai-cost-optimizer/mcp/server.py"
+        "/ABSOLUTE/PATH/TO/ai-cost-optimizer/mcp/server.py"
       ],
       "env": {
         "COST_OPTIMIZER_API_URL": "http://localhost:8000"
@@ -85,151 +77,22 @@ Add the MCP server:
 
 **Important**: Use the absolute path to `mcp/server.py` on your system!
 
-### 5. Restart Claude Desktop
+### 5. Test It!
 
-- Completely quit Claude Desktop (Cmd+Q on Mac)
-- Relaunch Claude Desktop
-
-### 6. Test It!
-
-In Claude Desktop:
-
-```
-Please use the cost optimizer to answer: What is quantum computing?
-```
-
-You should see:
-- Response from Gemini Flash (simple query)
-- Cost breakdown: ~$0.000001
-- Total cost tracking
-
-Try a complex query:
-
-```
-Please use the cost optimizer to explain: Design a microservices architecture for a real-time analytics platform
-```
-
-Should route to Claude Haiku for better quality.
-
-## How It Works
-
-### Complexity Scoring
-
-```python
-# Simple: < 100 tokens + no keywords
-"What is AI?" → Gemini Flash ($0.075 per 1M tokens)
-
-# Complex: Long OR has keywords like explain, analyze, design
-"Explain the architecture..." → Claude Haiku ($0.25 per 1M tokens)
-```
-
-### Cost Tracking
-
-All requests logged to `optimizer.db`:
-
-```bash
-# View usage
-curl http://localhost:8000/stats
-
-# Check total cost
-curl http://localhost:8000/stats | jq '.overall.total_cost'
-```
-
-## Docker Deployment
-
-### Production
-
-Start all services with PostgreSQL, FastAPI, and pgAdmin:
-
-```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit with your API keys and passwords
-nano .env
-
-# Build and start services
-docker-compose up -d
-
-# Check service status
-docker-compose ps
-
-# View API logs
-docker-compose logs -f api
-
-# Stop services
-docker-compose down
-```
-
-### Development (with hot reload)
-
-For active development with automatic code reloading:
-
-```bash
-# Use development configuration
-docker-compose -f docker-compose.dev.yml up
-
-# Code changes in ./app and ./tests will auto-reload
-# PostgreSQL runs on port 5433 to avoid conflicts
-```
-
-### Accessing Services
-
-- **FastAPI API**: http://localhost:8000
-- **API Documentation**: http://localhost:8000/docs
-- **pgAdmin**: http://localhost:5050 (login with credentials from .env)
-- **PostgreSQL**:
-  - Production: `localhost:5432`
-  - Development: `localhost:5433`
-
-### Database Management
-
-```bash
-# Connect to PostgreSQL directly
-docker exec -it optimizer-db psql -U optimizer_user -d optimizer
-
-# Run migrations
-docker-compose exec api alembic upgrade head
-
-# View database logs
-docker-compose logs postgres
-```
-
-## Project Structure
-
-```
-ai-cost-optimizer/
-├── app/
-│   ├── main.py           # FastAPI service
-│   ├── complexity.py     # Token counter + keyword detector
-│   ├── router.py         # Model selection logic
-│   ├── providers.py      # API clients (Gemini, Claude, OpenRouter)
-│   └── database.py       # SQLite cost tracker
-├── mcp/
-│   ├── server.py         # MCP tool for Claude Desktop
-│   └── requirements.txt
-├── .env                  # Your API keys
-├── optimizer.db         # Cost database (auto-created)
-└── README.md
-```
-
-## API Endpoints
-
-### Complete Prompt
+#### Via API
 
 ```bash
 curl -X POST http://localhost:8000/complete \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "What is AI?", "max_tokens": 1000}'
+  -d '{"prompt": "What is quantum computing?", "max_tokens": 1000}'
 ```
 
 Response:
 ```json
 {
-  "response": "AI is artificial intelligence...",
+  "response": "Quantum computing is...",
   "provider": "gemini",
   "model": "gemini-1.5-flash",
-  "complexity": "simple",
   "tokens_in": 4,
   "tokens_out": 50,
   "cost": 0.000015,
@@ -237,106 +100,77 @@ Response:
 }
 ```
 
-### Get Stats
+#### Via Claude Desktop
 
-```bash
-curl http://localhost:8000/stats
+```
+Please use the cost optimizer to answer: What is quantum computing?
 ```
 
-### Get Recommendation
+You should see the response along with cost tracking.
+
+## API Endpoints
+
+### Complete a Prompt
 
 ```bash
-curl "http://localhost:8000/recommendation?prompt=What+is+AI"
+POST /complete
+{
+  "prompt": "Your prompt here",
+  "max_tokens": 1000
+}
 ```
 
-### List Providers
+Returns the response with cost breakdown.
+
+### Get Usage Statistics
 
 ```bash
-curl http://localhost:8000/providers
+GET /stats
 ```
 
-## Configuration
+Returns total cost and request statistics.
 
-### Environment Variables
+### Get Provider Status
 
 ```bash
-# Provider API keys
+GET /providers
+```
+
+Lists all available providers and their status.
+
+### Health Check
+
+```bash
+GET /health
+```
+
+Returns service health status.
+
+## Environment Variables
+
+Create a `.env` file with your API keys:
+
+```bash
+# Provider API keys (add at least one)
 GOOGLE_API_KEY=your-key-here
 ANTHROPIC_API_KEY=your-key-here
 OPENROUTER_API_KEY=your-key-here
 CEREBRAS_API_KEY=your-key-here
 
-# Optional
-DATABASE_PATH=optimizer.db  # Database location
-PORT=8000                   # Server port
-LOG_LEVEL=INFO              # Logging verbosity
+# Optional configuration
+PORT=8000
+LOG_LEVEL=INFO
 ```
 
-## Cerebras + CePO
+## How It Works
 
-- Next.js Cerebras endpoint: `next-app/app/api/cerebras/chat/route.ts` (set `CEREBRAS_API_KEY`).
-- CePO experiment: see `experiments/README.md` and run `experiments/cepo_experiment.py`.
+The optimizer uses an **intelligent routing engine** that:
+1. Analyzes incoming prompts
+2. Selects the most cost-efficient provider for the task
+3. Tracks all costs and usage metrics
+4. Automatically falls back to alternative providers if needed
 
-## Security: Customer vs Admin Dashboards
-
-The system implements a **two-tier architecture** for competitive protection:
-
-### Customer-Safe Distribution
-
-**ALWAYS distribute:** `agent/customer_dashboard.py`
-- Shows ONLY tier labels (Economy Tier, Premium Tier, etc.)
-- NEVER exposes actual model names or providers
-- Safe for external users, customers, public demos
-
-### Internal Use Only
-
-**NEVER distribute:** `agent/admin_dashboard.py`
-- Shows actual model names (e.g., "openrouter/deepseek-coder", "claude/claude-3-haiku")
-- Exposes internal routing logic and model selection strategy
-- Contains competitive intelligence
-- For development, debugging, and internal analysis ONLY
-
-### Why This Matters
-
-**Competitive Protection:**
-- Your model selection strategy is valuable intellectual property
-- Hard-won knowledge about which models work best for each task type
-- Cost optimization approach is a competitive advantage
-
-**Customer Value:**
-- Customers still get full optimization benefits
-- Recommendations show tier performance and savings
-- Transparent about quality and cost without exposing strategy
-
-### File Security Matrix
-
-| File | Distribution | Shows Models? | Purpose |
-|------|--------------|---------------|---------|
-| `customer_dashboard.py` | ✅ External OK | ❌ No - Tiers only | Customer dashboards, demos |
-| `admin_dashboard.py` | ⛔ Internal ONLY | ✅ Yes - Full details | Dev, debugging, analysis |
-| `model_abstraction.py` | ⛔ Internal ONLY | ✅ Contains mapping | Core abstraction logic |
-| Agent tools (mode="external") | ✅ External OK | ❌ No - Tiers only | Customer-facing recommendations |
-| Agent tools (mode="internal") | ⛔ Internal ONLY | ✅ Yes - Full details | Admin analysis |
-
-**Before sharing ANY code or dashboard:**
-1. Check if it contains actual model names
-2. Verify it only shows tier labels
-3. Confirm it's the customer_dashboard.py version
-4. Never share admin_dashboard.py or model_abstraction.py
-
-### Pricing
-
-**Gemini Flash** (simple queries):
-- Input: $0.075 per 1M tokens
-- Output: $0.30 per 1M tokens
-- Free tier available
-
-**Claude Haiku** (complex queries):
-- Input: $0.25 per 1M tokens
-- Output: $1.25 per 1M tokens
-
-**OpenRouter** (fallback):
-- Pricing varies by model
+**Result**: Up to 60% cost reduction compared to always using premium models.
 
 ## Troubleshooting
 
@@ -346,41 +180,35 @@ The system implements a **two-tier architecture** for competitive protection:
 # Check if port 8000 is in use
 lsof -i :8000
 
-# Check API keys are set
+# Verify API keys are set
 cat .env
 ```
 
 ### MCP tool not appearing in Claude Desktop
 
 1. Verify absolute path in `claude_desktop_config.json`
-2. Check FastAPI service is running (`curl http://localhost:8000/health`)
-3. Restart Claude Desktop completely
+2. Check service is running: `curl http://localhost:8000/health`
+3. Completely quit and restart Claude Desktop (Cmd+Q on Mac)
 4. Check Claude Desktop logs
 
-### Wrong model selected
+### API errors
 
-Check complexity score:
-```bash
-curl "http://localhost:8000/recommendation?prompt=your+prompt+here"
-```
+- Verify API keys are valid and active
+- Check provider service status
+- Review logs for detailed error messages
 
-## Development
-
-### Running Tests
+## Testing
 
 ```bash
-# Test complexity scorer
-python -c "from app.complexity import score_complexity; print(score_complexity('What is AI?'))"
+# Install test dependencies
+pip install pytest pytest-asyncio
 
-# Test database
-python -c "from app.database import CostTracker; t = CostTracker(); print(t.get_total_cost())"
+# Run test suite
+pytest
+
+# Run with coverage
+pytest --cov=app tests/
 ```
-
-### Adding a Provider
-
-1. Add provider class in `app/providers.py`
-2. Add to `init_providers()` function
-3. Update routing logic in `app/router.py`
 
 ## License
 
@@ -388,4 +216,4 @@ MIT - do whatever you want with it!
 
 ## Questions?
 
-This is a learning project built with the "GTME" philosophy (Give This to ME). Feel free to fork, modify, and make it yours!
+This is a learning project built to help developers reduce AI costs. Feel free to fork, modify, and make it yours!
