@@ -1,0 +1,68 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
+import {
+  LayoutDashboard,
+  Key,
+  Settings,
+  Activity,
+  Zap
+} from 'lucide-react'
+
+const navigation = [
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'API Keys', href: '/api-keys', icon: Key },
+  { name: 'Settings', href: '/settings', icon: Settings },
+]
+
+export function Navbar() {
+  const pathname = usePathname()
+
+  return (
+    <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 justify-between">
+          <div className="flex">
+            {/* Logo */}
+            <div className="flex flex-shrink-0 items-center">
+              <Zap className="h-8 w-8 text-primary" />
+              <span className="ml-2 text-xl font-bold">AI Cost Optimizer</span>
+            </div>
+
+            {/* Navigation Links */}
+            <div className="hidden sm:ml-10 sm:flex sm:space-x-8">
+              {navigation.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    className={cn(
+                      'inline-flex items-center border-b-2 px-1 pt-1 text-sm font-medium',
+                      isActive
+                        ? 'border-primary text-foreground'
+                        : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'
+                    )}
+                  >
+                    <item.icon className="mr-2 h-4 w-4" />
+                    {item.name}
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Status indicator */}
+          <div className="flex items-center">
+            <div className="flex items-center text-sm text-muted-foreground">
+              <Activity className="mr-1 h-4 w-4 text-green-500" />
+              <span>Connected</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </nav>
+  )
+}
