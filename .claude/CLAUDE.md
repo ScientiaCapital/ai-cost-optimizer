@@ -289,7 +289,65 @@ vercel --prod    # Deploy to production
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=https://YOUR_POD_ID-8000.proxy.runpod.net
+```
+
+### Apple Silicon Build Instructions
+
+**Important**: Apple Silicon Macs (M1/M2/M3) use ARM64 architecture, but RunPod uses x86_64/amd64. You cannot build Docker images locally that will run on RunPod.
+
+**Solution 1: GitHub Actions (Recommended)**
+
+Push to main branch to trigger automatic build:
+```bash
+git push origin main
+# Workflow triggers on changes to: app/**, requirements.txt, Dockerfile
+# Manual trigger: Go to GitHub Actions → Run workflow
+```
+
+Image pushed to: `ghcr.io/scientiacapital/ai-cost-optimizer:latest`
+
+**Solution 2: Manual buildx (One-off builds)**
+```bash
+# Setup buildx (one-time)
+docker buildx create --use --name multiarch
+
+# Build and push for linux/amd64
+docker buildx build --platform linux/amd64 --push \
+  -t ghcr.io/scientiacapital/ai-cost-optimizer:latest .
+```
+
+### RunPod Deployment
+
+**Pod Configuration**:
+- Container Image: `ghcr.io/scientiacapital/ai-cost-optimizer:latest`
+- Container Disk: 20GB
+- Volume Disk: 10GB (mount to `/app/model_cache`)
+- Expose Port: 8000
+- GPU: None for testing (~$0.10/hr), RTX 4090 for production (~$0.74/hr)
+
+**Environment Variables (RunPod Dashboard)**:
+```
+# Required
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=eyJhbGc...
+SUPABASE_SERVICE_KEY=eyJhbGc...
+SUPABASE_JWT_SECRET=your-jwt-secret
+GOOGLE_API_KEY=your-key
+ANTHROPIC_API_KEY=your-key
+
+# Configuration
+PORT=8000
+LOG_LEVEL=INFO
+EMBEDDING_DEVICE=cpu  # Change to 'cuda' for GPU pods
+CORS_ORIGINS=https://ai-cost-optimizer-scientia-capital.vercel.app
+TORCH_HOME=/app/model_cache
+```
+
+**Verify Deployment**:
+```bash
+curl https://YOUR_POD_ID-8000.proxy.runpod.net/health
+# Expected: {"status": "healthy"}
 ```
 
 ## 8. Coding Standards
