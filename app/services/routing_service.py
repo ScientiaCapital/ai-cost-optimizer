@@ -110,7 +110,7 @@ class RoutingService:
                 "confidence": "high",
                 "complexity_metadata": {
                     "cached": True,
-                    "original_timestamp": cached["created_at"]
+                    "original_timestamp": cached.get("created_at", cached.get("last_accessed", "unknown"))
                 },
                 "tokens_in": cached["tokens_in"],
                 "tokens_out": cached["tokens_out"],

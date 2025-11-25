@@ -1,9 +1,10 @@
 """Automated learning pipeline from user feedback."""
 import logging
 import uuid
+import asyncio
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-from app.database.postgres import get_connection, get_cursor
+from app.services.admin_service import get_admin_service
 from app.learning.query_pattern_analyzer import QueryPatternAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -130,69 +131,21 @@ class FeedbackTrainer:
         Returns:
             Nested dict: {pattern: {model: {stats}}}
         """
-        with get_connection() as conn:
-            cursor = get_cursor(conn, dict_cursor=True)
-            is_sqlite = _is_sqlite(conn)
+        admin_service = get_admin_service()
 
-            if is_sqlite:
-                # SQLite query
-                query = """
-                    SELECT
-                        prompt_pattern,
-                        selected_model,
-                        COUNT(*) as sample_count,
-                        AVG(quality_score) as avg_quality,
-                        AVG(CASE WHEN is_correct THEN 1.0 ELSE 0.0 END) as correctness_rate,
-                        AVG(complexity_score) as avg_complexity
-                    FROM routing_feedback
-                    WHERE prompt_pattern IS NOT NULL
-                      AND selected_model IS NOT NULL
-                      AND datetime(timestamp) > datetime('now', '-90 days')
-                    GROUP BY prompt_pattern, selected_model
-                    HAVING COUNT(*) >= 3
-                """
-                cursor.execute(query)
-            else:
-                # PostgreSQL query
-                query = """
-                    SELECT
-                        prompt_pattern,
-                        selected_model,
-                        COUNT(*) as sample_count,
-                        AVG(quality_score) as avg_quality,
-                        AVG(CASE WHEN is_correct THEN 1.0 ELSE 0.0 END) as correctness_rate,
-                        AVG(complexity_score) as avg_complexity
-                    FROM routing_feedback
-                    WHERE prompt_pattern IS NOT NULL
-                      AND selected_model IS NOT NULL
-                      AND timestamp > NOW() - INTERVAL '90 days'
-                    GROUP BY prompt_pattern, selected_model
-                    HAVING COUNT(*) >= 3
-                """
-                cursor.execute(query)
-
-            rows = cursor.fetchall()
-
-            # Organize by pattern -> model
-            result = {}
-            for row in rows:
-                # Handle both dict-like cursor and sqlite3.Row
-                if is_sqlite:
-                    row = dict(row)
-
-                pattern = row['prompt_pattern']
-                model = row['selected_model']
-
-                if pattern not in result:
-                    result[pattern] = {}
-
-                result[pattern][model] = {
-                    'count': row['sample_count'],
-                    'avg_quality': float(row['avg_quality']),
-                    'correctness': float(row['correctness_rate']),
-                    'avg_complexity': float(row['avg_complexity']) if row['avg_complexity'] else 0.5
-                }
-
+        # Run async operation in sync context
+        try:
+            # Check if event loop is already running
+            loop = asyncio.get_running_loop()
+            # Event loop is running - create task and wait
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(asyncio.run, admin_service.aggregate_feedback_for_learning())
+                result = future.result()
+                return result
+        except RuntimeError:
+            # No running loop - safe to use asyncio.run()
+            result = asyncio.run(admin_service.aggregate_feedback_for_learning())
             return result
 
     def _update_routing_weights(
@@ -233,41 +186,35 @@ class FeedbackTrainer:
             confidence: Confidence level
             run_id: Retraining run ID
         """
-        with get_connection() as conn:
-            cursor = get_cursor(conn, dict_cursor=False)
-            is_sqlite = _is_sqlite(conn)
+        admin_service = get_admin_service()
 
-            # Extract provider from model name
-            provider = model.split('/')[0] if '/' in model else 'unknown'
-
-            if is_sqlite:
-                # SQLite doesn't have model_performance_history table in migrations
-                # Skip for now - this is for PostgreSQL deployment
-                logger.debug(f"Skipping performance history storage for SQLite: {pattern}/{model}")
-                return
-            else:
-                # PostgreSQL
-                cursor.execute("""
-                    INSERT INTO model_performance_history (
-                        pattern, provider, model,
-                        avg_quality_score, correctness_rate, sample_count, confidence_level,
-                        avg_cost, total_cost, updated_at, retraining_run_id
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        # Run async operation in sync context
+        try:
+            # Check if event loop is already running
+            loop = asyncio.get_running_loop()
+            # Event loop is running - create task in thread pool
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(
+                    asyncio.run,
+                    admin_service.store_performance_history(
+                        pattern=pattern,
+                        model=model,
+                        stats=stats,
+                        confidence=confidence,
+                        run_id=run_id
                     )
-                """, (
-                    pattern,
-                    provider,
-                    model,
-                    stats['avg_quality'],
-                    stats['correctness'],
-                    stats['count'],
-                    confidence,
-                    None,  # avg_cost - compute if needed
-                    None,  # total_cost
-                    datetime.now(),
-                    run_id
-                ))
+                )
+                future.result()
+        except RuntimeError:
+            # No running loop - safe to use asyncio.run()
+            asyncio.run(admin_service.store_performance_history(
+                pattern=pattern,
+                model=model,
+                stats=stats,
+                confidence=confidence,
+                run_id=run_id
+            ))
 
     def _log_retraining_run(self, result: Dict[str, Any]):
         """Log retraining run metadata.

@@ -9,11 +9,20 @@ from jwt import PyJWTError
 
 logger = logging.getLogger(__name__)
 
-# Supabase JWT secret from environment
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
-
 # HTTP Bearer token scheme
 security = HTTPBearer()
+
+
+def get_jwt_secret() -> Optional[str]:
+    """
+    Get Supabase JWT secret from environment.
+
+    Read dynamically to allow test fixtures to override the value.
+
+    Returns:
+        JWT secret string or None if not set
+    """
+    return os.getenv("SUPABASE_JWT_SECRET")
 
 
 def verify_jwt_token(token: str) -> dict:
@@ -29,7 +38,8 @@ def verify_jwt_token(token: str) -> dict:
     Raises:
         HTTPException: If token is invalid or expired
     """
-    if not SUPABASE_JWT_SECRET:
+    jwt_secret = get_jwt_secret()
+    if not jwt_secret:
         logger.error("SUPABASE_JWT_SECRET not set in environment!")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -40,7 +50,7 @@ def verify_jwt_token(token: str) -> dict:
         # Decode JWT using Supabase secret
         payload = jwt.decode(
             token,
-            SUPABASE_JWT_SECRET,
+            jwt_secret,
             algorithms=["HS256"],
             audience="authenticated"  # Supabase sets aud to "authenticated"
         )
