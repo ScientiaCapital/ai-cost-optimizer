@@ -1,407 +1,132 @@
-# AI Cost Optimizer - Architecture Documentation
+# AI Cost Optimizer - Architecture
 
-**Last Updated:** November 1, 2025
-**Version:** 2.0.0 (Phase 2 Complete)
-**Status:** Production Ready ✅
-
----
-
-## Executive Summary
-
-The AI Cost Optimizer uses a three-layer architecture with intelligent routing based on learning data. Phase 2 introduces the Strategy Pattern for pluggable routing algorithms, enabling measurable cost savings through data-driven model selection.
-
-**Key Achievement**: 42/42 tests passing, 391 lines of legacy code removed, production-ready intelligent routing.
+**Version:** 4.0.0 (Supabase + Semantic Caching)
+**Last Updated:** 2025-11-25
 
 ---
 
-## System Architecture Overview
+## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    FastAPI Layer                            │
-│         (HTTP, Request/Response, Validation)                │
-│  /complete, /recommendation, /routing/metrics, /health      │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────┐
-│                  Service Layer                               │
-│              app/services/routing_service.py                │
-│  - Cache checking (CostTracker)                             │
-│  - Provider execution                                        │
-│  - Response formatting                                       │
-│  - Cost tracking coordination                                │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────┐
-│                   Core Routing Layer                         │
-│                  app/routing/engine.py                      │
-│                  (RoutingEngine - Facade)                    │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-         ┌───────────────┴───────────────┐
-         │                               │
-┌────────▼─────────┐          ┌─────────▼──────────┐
-│  Strategy Layer  │          │  Metrics Layer      │
-│  (Pluggable)     │          │  MetricsCollector   │
-├──────────────────┤          │  QueryPatternAnalyzer│
-│ ComplexityStrategy│          └─────────────────────┘
-│ LearningStrategy  │
-│ HybridStrategy    │
-└───────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     Client Layer                                 │
+│  ┌────────────┐  ┌────────────────┐  ┌──────────────────────┐   │
+│  │ curl/API   │  │ Claude MCP     │  │ Next.js Dashboard    │   │
+│  └─────┬──────┘  └───────┬────────┘  └──────────┬───────────┘   │
+└────────┼─────────────────┼──────────────────────┼───────────────┘
+         │                 │                      │
+         ▼                 ▼                      ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    FastAPI Service (18 endpoints)                │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐      │
+│  │ JWT Auth    │  │ Routing     │  │ Semantic Cache      │      │
+│  │ (Supabase)  │  │ Engine      │  │ (pgvector)          │      │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘      │
+│         │                │                     │                 │
+│         ▼                ▼                     ▼                 │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │              Supabase PostgreSQL                        │    │
+│  │  • pgvector for 384D embeddings                         │    │
+│  │  • 18 RLS policies for multi-tenancy                    │    │
+│  │  • Real-time subscriptions                              │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│         │                                                        │
+│         ▼                                                        │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │           AI Providers                                  │    │
+│  │  Gemini │ Claude │ Cerebras │ OpenRouter                │    │
+│  └─────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Phase 2 Components
+## Key Components
 
-### 1. RoutingEngine (`app/routing/engine.py`)
-**Role:** Facade that orchestrates strategy selection
+### Backend (FastAPI)
+| Component | File | Purpose |
+|-----------|------|---------|
+| Main API | `app/main.py` | 18 REST endpoints |
+| Auth | `app/auth.py` | JWT validation, 3 auth modes |
+| Routing Engine | `app/routing/engine.py` | Strategy pattern |
+| Strategies | `app/routing/strategy.py` | Complexity, Learning, Hybrid |
+| Semantic Cache | `app/database/cost_tracker_async.py` | pgvector caching |
+| Embeddings | `app/embeddings/generator.py` | sentence-transformers |
 
-```python
-class RoutingEngine:
-    def route(self, prompt: str, auto_route: bool,
-              context: RoutingContext) -> RoutingDecision:
-        if auto_route:
-            return self.hybrid_strategy.route(prompt, context)
-        else:
-            return self.complexity_strategy.route(prompt, context)
-```
+### Frontend (Next.js 15)
+| Component | File | Purpose |
+|-----------|------|---------|
+| Dashboard | `frontend/app/dashboard/page.tsx` | Metrics display |
+| API Keys | `frontend/app/api-keys/page.tsx` | Key management |
+| Settings | `frontend/app/settings/page.tsx` | Configuration |
+| API Utils | `frontend/lib/api.ts` | Backend calls |
 
-**Key Features:**
-- Strategy selection based on `auto_route` parameter
-- Metrics tracking for all decisions
-- Fallback handling
+---
 
-### 2. Routing Strategies (`app/routing/strategy.py`)
+## Routing Strategies
 
-#### ComplexityStrategy (Baseline)
-- Keyword + length-based scoring
-- Simple → Gemini Flash / Cerebras 8B
-- Complex → Claude Haiku / Cerebras 70B
-- Fallback to OpenRouter
-
-#### LearningStrategy (Pure Learning)
-- Queries `QueryPatternAnalyzer` for recommendations
-- Uses historical performance data
-- Returns confidence levels
-
-#### HybridStrategy (Production Default)
-**Algorithm:**
+### HybridStrategy (Default for auto_route=true)
 ```
 1. Query learning for recommendation
-2. Check confidence level:
-   - HIGH: Validate against complexity, use if reasonable
-   - MEDIUM/LOW: Use learning (experimental flag)
-3. On error: Fallback to ComplexityStrategy
+2. Check confidence:
+   - HIGH → Validate against complexity, use if reasonable
+   - MEDIUM/LOW → Use learning (experimental)
+3. On error → Fallback to ComplexityStrategy
 ```
 
-### 3. RoutingService (`app/services/routing_service.py`)
-**Role:** Service layer bridge between FastAPI and RoutingEngine
-
-**Key Methods:**
-- `route_and_complete()` - Full routing + execution with cache
-- `get_recommendation()` - Routing decision without execution
-- `get_routing_metrics()` - Analytics
-
-### 4. MetricsCollector (`app/routing/metrics.py`)
-**Role:** Track all routing decisions for ROI analysis
-
-**Tracked Data:**
-- Strategy used
-- Confidence level
-- Provider/model selected
-- Cost per decision
-- Timestamps
-
-**Aggregations:**
-- By strategy distribution
-- By confidence levels
-- By provider usage
-- Cost savings calculations
+### Provider Selection
+| Complexity | Provider | Cost |
+|------------|----------|------|
+| Simple | Gemini/Cerebras | FREE-$0.10/1M |
+| Complex | Claude Haiku | $0.25/1M |
+| Fallback | OpenRouter | Varies |
 
 ---
 
-## Data Flow
+## Database Schema (Supabase)
 
-### Complete Request Flow (auto_route=true)
+### Core Tables
+- `requests` - Request logs with embeddings
+- `response_cache` - Semantic cache entries
+- `routing_metrics` - Decision tracking
+- `routing_feedback` - User feedback
+- `experiments` - A/B test definitions
 
-```
-1. POST /complete {"prompt": "...", "auto_route": true}
-   ↓
-2. FastAPI validates → routing_service.route_and_complete()
-   ↓
-3. Check cache → CostTracker.check_cache()
-   ├─ HIT  → Return cached ($0 cost)
-   └─ MISS → Continue to routing
-   ↓
-4. routing_engine.route(prompt, auto_route=true, context)
-   ↓
-5. HybridStrategy selected
-   ├─ Query learning analyzer
-   ├─ Check confidence (HIGH/MEDIUM/LOW)
-   └─ Validate or use experimental
-   ↓
-6. RoutingDecision returned (provider, model, confidence)
-   ↓
-7. Execute with provider.send_message()
-   ↓
-8. MetricsCollector.track_decision()
-   ↓
-9. CostTracker.log_request() + store_in_cache()
-   ↓
-10. Return response with metadata
-```
-
----
-
-## Database Schema
-
-### response_cache (Phase 1)
-```sql
-CREATE TABLE response_cache (
-    id INTEGER PRIMARY KEY,
-    prompt_normalized TEXT UNIQUE,
-    prompt_hash TEXT UNIQUE,
-    complexity TEXT,
-    provider TEXT,
-    model TEXT,
-    response_text TEXT,
-    tokens_in INTEGER,
-    tokens_out INTEGER,
-    cost REAL,
-    quality_score REAL,
-    upvotes INTEGER DEFAULT 0,
-    downvotes INTEGER DEFAULT 0,
-    invalidated INTEGER DEFAULT 0,
-    hit_count INTEGER DEFAULT 0,
-    created_at TEXT,
-    last_used_at TEXT
-);
-```
-
-### routing_metrics (Phase 2)
-```sql
-CREATE TABLE routing_metrics (
-    id INTEGER PRIMARY KEY,
-    prompt_hash TEXT,
-    strategy TEXT,      -- complexity/learning/hybrid
-    confidence TEXT,    -- high/medium/low
-    provider TEXT,
-    model TEXT,
-    cost REAL,
-    baseline_cost REAL, -- For savings calculation
-    timestamp TEXT
-);
-```
+### Security
+- 18 RLS policies across 7 tables
+- Automatic user_id filtering
+- JWT claims → Supabase context
 
 ---
 
 ## API Endpoints
 
-### Core Endpoints
-- `POST /complete` - Route and execute with caching
-- `GET /recommendation` - Get routing decision without execution
-- `GET /health` - Service health + version
-
-### Phase 2 New Endpoints
-- `GET /routing/metrics` - Performance analytics
-- `GET /routing/decision` - Detailed routing explanation
-
-### Legacy Endpoints (Still Active)
-- `GET /stats` - Usage statistics
-- `POST /feedback` - Quality feedback
-- `GET /cache/stats` - Cache performance
+| Endpoint | Method | Auth | Purpose |
+|----------|--------|------|---------|
+| `/complete` | POST | Optional | Route + execute |
+| `/stats` | GET | Optional | Usage stats |
+| `/cache/stats` | GET | Optional | Cache performance |
+| `/routing/metrics` | GET | Optional | Routing analytics |
+| `/feedback` | POST | Optional | Submit feedback |
+| `/admin/learning/status` | GET | Optional | ML status |
+| `/health` | GET | None | Health check |
 
 ---
 
-## Configuration
+## Performance
 
-### Environment Variables
+| Metric | Value |
+|--------|-------|
+| Cache hit rate | 70-85% (semantic) |
+| Cold start | ~3s (ML model load) |
+| Cached request | 50-200ms |
+| Uncached request | 500-2000ms |
+
+---
+
+## Testing
+
 ```bash
-# Provider API Keys (at least one required)
-GOOGLE_API_KEY=...
-ANTHROPIC_API_KEY=...
-CEREBRAS_API_KEY=...
-OPENROUTER_API_KEY=...
-
-# Database
-DATABASE_PATH=optimizer.db  # SQLite
-
-# Routing
-DEFAULT_AUTO_ROUTE=false   # Phase 2 routing off by default
+pytest                     # 123 tests, 7 skipped
+pytest --cov=app tests/   # Coverage report
 ```
-
-### Request Parameters
-```python
-class CompleteRequest:
-    prompt: str
-    max_tokens: int = 1000
-    auto_route: bool = False  # Enable Phase 2 routing
-    tokenizer_id: Optional[str] = None
-```
-
----
-
-## Testing Architecture
-
-### Test Coverage: 42 Tests
-1. **Strategy Tests** (20 tests)
-   - ComplexityStrategy: 10 tests
-   - LearningStrategy: 3 tests
-   - HybridStrategy: 7 tests
-
-2. **Engine Tests** (6 tests)
-   - auto_route behavior
-   - Fallback handling
-   - Context creation
-
-3. **Metrics Tests** (5 tests)
-   - Decision tracking
-   - Aggregations
-
-4. **Service Tests** (5 tests)
-   - Cache hit/miss
-   - Route and complete
-
-5. **Models Tests** (3 tests)
-   - RoutingDecision
-   - RoutingContext
-
-6. **Abstract Tests** (2 tests)
-   - Strategy interface
-   - Concrete implementations
-
-### Test Execution
-```bash
-pytest -v  # 42 passed in 0.09s
-```
-
----
-
-## Performance Characteristics
-
-### Latency Breakdown
-- Cache hit: <10ms
-- Complexity routing: 20-50ms
-- Hybrid routing: 30-70ms
-- Provider execution: 500-3000ms
-
-### Scalability
-- Current: 10-50 req/sec (single process)
-- With workers: 100-500 req/sec
-- Load balanced: 1000+ req/sec
-
----
-
-## Security
-
-### API Key Management
-- Environment variables (dev)
-- Secrets manager (production)
-
-### Data Privacy
-- Prompts cached locally
-- No PII by default
-- User-level cache clearing
-
-### Input Validation
-- Pydantic models
-- Length limits
-- Type checking
-
----
-
-## Monitoring
-
-### Health Checks
-```json
-GET /health
-{
-  "status": "healthy",
-  "providers_available": ["gemini", "claude", "cerebras", "openrouter"],
-  "routing_engine": "v2",
-  "auto_route_enabled": true,
-  "version": "2.0.0"
-}
-```
-
-### Metrics
-```json
-GET /routing/metrics
-{
-  "strategy_performance": {...},
-  "total_decisions": 156,
-  "confidence_distribution": {"high": 120, "medium": 30, "low": 6},
-  "provider_usage": {...}
-}
-```
-
----
-
-## Key Design Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| **Strategy Pattern** | Enables pluggable routing algorithms |
-| **Hybrid as Default** | Balances learning with validation |
-| **Query Parameter** | Gradual rollout without breaking changes |
-| **SQLite** | Simple, embedded, sufficient for scale |
-| **Three Layers** | Separation of concerns, testable |
-| **Fallback to Complexity** | Zero downtime guarantee |
-
----
-
-## Evolution Path
-
-### ✅ Phase 1 Complete
-- Learning infrastructure
-- Quality feedback
-- Pattern analysis
-
-### ✅ Phase 2 Complete
-- Intelligent routing
-- Strategy pattern
-- Comprehensive metrics
-
-### 🔮 Phase 3 (Future)
-- A/B testing framework
-- Real-time optimization
-- Multi-region deployment
-- Advanced caching
-
----
-
-## File Structure
-
-```
-app/
-├── main.py                 # FastAPI endpoints
-├── services/
-│   ├── __init__.py
-│   └── routing_service.py  # Service layer
-├── routing/
-│   ├── __init__.py
-│   ├── engine.py           # RoutingEngine facade
-│   ├── strategy.py         # 3 strategies
-│   ├── models.py           # Data models
-│   ├── metrics.py          # MetricsCollector
-│   └── complexity.py       # Complexity analysis
-├── providers/              # Provider clients
-├── database.py             # CostTracker
-└── learning.py             # QueryPatternAnalyzer
-
-tests/
-├── test_routing_service.py
-├── test_routing_engine.py
-├── test_*_strategy.py
-├── test_metrics.py
-└── test_routing_models.py
-```
-
----
-
-## References
-
-- **Design Docs**: `docs/plans/2025-01-11-*-design.md`
-- **Implementation Plans**: `docs/plans/2025-01-11-*-implementation.md`
-- **Phase 1 Summary**: `docs/plans/2025-10-30-phase1-completion-summary.md`
