@@ -263,27 +263,34 @@ pytest --cov=app --cov-report=html
 - Sample prompts of varying complexity
 - Database state management with fixtures
 
-## 7. Deployment Strategy
+## 7. Deployment
 
-### Local Development
-- Direct Python execution with auto-reload
-- SQLite for cost tracking
-- Local environment variables
-
-### Docker Deployment
+### Backend (FastAPI)
 ```bash
-# Development
-docker-compose -f docker-compose.dev.yml up
+# Local development
+python app/main.py
 
-# Production
-docker-compose -f docker-compose.prod.yml up -d
+# Docker
+docker-compose up --build
 ```
 
-### Production Considerations
-- Use PostgreSQL instead of SQLite for production
-- Implement proper secret management
-- Add monitoring and health checks
-- Configure reverse proxy (nginx) for SSL termination
+### Frontend (Next.js Dashboard)
+- **Production URL**: https://ai-cost-optimizer-scientia-capital.vercel.app
+- **Vercel Project**: ai-cost-optimizer (scientia-capital)
+- **Stack**: Next.js 15, React 19, Tailwind CSS, Shadcn/ui
+
+```bash
+cd frontend
+npm run dev      # Local development
+vercel --prod    # Deploy to production
+```
+
+### Environment Variables (Vercel Dashboard)
+```
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
 
 ## 8. Coding Standards
 
@@ -344,15 +351,6 @@ python mcp/server.py
 # Edit: ~/Library/Application Support/Claude/claude_desktop_config.json
 ```
 
-### Database Operations
-```bash
-# View cost tracking data
-sqlite3 costs.db "SELECT * FROM api_costs ORDER BY timestamp DESC LIMIT 10;"
-
-# Reset cost tracking (development)
-rm costs.db
-```
-
 ### Debugging Commands
 ```bash
 # Check API health
@@ -379,8 +377,8 @@ curl -X POST http://localhost:8000/chat \
 - Review API rate limits and quotas
 
 **Database Issues**:
-- Ensure write permissions in project directory
-- Check SQLite file isn't locked by another process
+- Check Supabase credentials in `.env`
+- Verify pgvector extension is enabled
 
 ### Debug Mode
 ```python
@@ -488,21 +486,29 @@ Supabase PostgreSQL → async operations → non-blocking I/O
 3. ✅ **Update docker-compose.yml** - Removed postgres, redis, pgadmin services
 4. ✅ **Delete Deprecated Code** - Removed async_pool.py, redis_cache.py, old database.py
 5. ✅ **Update Test Fixtures** - Added comprehensive Supabase auth fixtures
-6. ✅ **Run Full Test Suite** - 105/111 tests passing (95% pass rate)
+6. ✅ **Run Full Test Suite** - 123 tests passing (7 skipped)
 7. ✅ **Production Deployment** - Created Dockerfile, deployment docs, frontend dashboard
 8. ✅ **Documentation** - Created DEPLOYMENT.md, REALTIME_SETUP.md, frontend/README.md
 
-### 📁 New Files Created
+### 📁 Key Files
 
 ```
-app/database/supabase_client.py     - Supabase async client (350 lines)
-app/database/cost_tracker_async.py  - Semantic caching tracker (900+ lines)
-app/embeddings/generator.py         - ML embedding generator (280 lines)
-app/routing/metrics_async.py        - Async metrics collector (350 lines)
-app/experiments/tracker_async.py    - A/B testing tracker (450 lines)
-app/auth.py                         - JWT authentication (170 lines)
-docs/REALTIME_SETUP.md              - Realtime integration guide (400+ lines)
-migrations/supabase_*.sql           - Database setup scripts (3 files)
+# Backend
+app/database/supabase_client.py     - Supabase async client
+app/database/cost_tracker_async.py  - Semantic caching tracker
+app/embeddings/generator.py         - ML embedding generator
+app/routing/metrics_async.py        - Async metrics collector
+app/auth.py                         - JWT authentication
+migrations/supabase_*.sql           - Database setup scripts
+
+# Frontend (Next.js 15)
+frontend/app/dashboard/page.tsx     - Main metrics dashboard
+frontend/app/api-keys/page.tsx      - API key management
+frontend/app/settings/page.tsx      - Settings page
+frontend/components/MetricsCard.tsx - Metric display cards
+frontend/components/ProviderChart.tsx - Provider distribution
+frontend/lib/api.ts                 - Backend API utilities
+frontend/lib/supabase.ts            - Supabase client config
 ```
 
 ### 🔑 Key Insights
