@@ -312,10 +312,18 @@ Image pushed to: `ghcr.io/scientiacapital/ai-cost-optimizer:latest`
 # Setup buildx (one-time)
 docker buildx create --use --name multiarch
 
-# Build and push for linux/amd64
+# Build and push for linux/amd64 (GHCR)
 docker buildx build --platform linux/amd64 --push \
   -t ghcr.io/scientiacapital/ai-cost-optimizer:latest .
+
+# Or push to Docker Hub (username: tmk74)
+docker buildx build --platform linux/amd64 --push \
+  -t docker.io/tmk74/ai-cost-optimizer:latest .
 ```
+
+### Docker Registry Options
+- **GHCR**: `ghcr.io/scientiacapital/ai-cost-optimizer:latest`
+- **Docker Hub**: `docker.io/tmk74/ai-cost-optimizer:latest` (username: `tmk74`)
 
 ### RunPod Deployment
 
@@ -706,3 +714,34 @@ Start with **#1 (SaaS)** to build initial traction and validate the market, then
 **See Also**:
 - `docs/REALTIME_SETUP.md` for real-time metrics integration guide
 - `docs/DEPLOYMENT.md` for production deployment on RunPod/AWS/GCP
+
+---
+
+## 13. Session Progress - 2025-11-25
+
+### ✅ Completed Today
+1. **GitHub Actions Workflow** - Created `.github/workflows/docker-build.yml` for cross-platform builds
+2. **Docker Images Built**:
+   - GHCR: `ghcr.io/scientiacapital/ai-cost-optimizer:latest` ✅
+   - Docker Hub: `docker.io/tmk74/ai-cost-optimizer:latest` ✅
+3. **httpx Version Fix** - Fixed container crash by updating `httpx>=0.27.0` (supabase/gotrue requires proxy support)
+4. **Crashed Pod Terminated** - Pod `dpc3bh9s6jgrtv` was in crash loop, now terminated
+5. **RunPod Deployment Script** - Created `scripts/deploy_runpod.py` for easy re-deployment
+
+### 🔧 Key Fix Applied
+```
+# requirements.txt
+httpx>=0.27.0  # Needs 0.27+ for supabase/gotrue proxy support
+```
+
+The supabase-py library uses gotrue-py which requires httpx 0.27+ for the `proxy` parameter in `Client.__init__()`.
+
+### 📋 What's Left (Next Session)
+1. **Deploy to RunPod** - Use `ghcr.io/scientiacapital/ai-cost-optimizer:latest` (fixed image)
+2. **Update Vercel** - Set `NEXT_PUBLIC_API_URL` to new RunPod URL
+3. **Test Dashboard** - Verify frontend connects to live backend
+4. **End-to-End Testing** - Health check, API endpoints, dashboard metrics
+
+### 🔑 Credentials Reference
+- **Docker Hub Username**: `tmk74`
+- **RunPod API Key**: In `.env` file
