@@ -1,5 +1,8 @@
 # AI Cost Optimizer
 
+[![Run in Smithery](https://smithery.ai/badge/skills/scientiacapital)](https://smithery.ai/skills?ns=scientiacapital&utm_source=github&utm_medium=badge)
+
+
 > **Intelligent LLM router that reduces AI API costs by up to 60%** without sacrificing quality.
 
 ## What It Does
